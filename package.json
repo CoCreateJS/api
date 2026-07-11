@@ -42,7 +42,9 @@
     "type": "GitHub Sponsors ❤",
     "url": "https://github.com/sponsors/CoCreate-app"
   },
-  "main": "./src/index.js",
+  "type": "module",
+  "main": "./src/server.js",
+  "browser": "./src/client.js",
   "dependencies": {
     "@cocreate/actions": "^1.21.4",
     "@cocreate/crud-client": "^1.34.6",
