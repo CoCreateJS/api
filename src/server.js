@@ -31,13 +31,38 @@ let server = null;
 let wsManager = null;
 let crud = null;
 
+const NativeSandbox = {
+    Math,
+    Number,
+    String,
+    Boolean,
+    Date,
+    JSON,
+    Array,
+    Object,
+    parseInt,
+    parseFloat,
+    encodeURIComponent,
+    decodeURIComponent,
+    btoa: (str) => Buffer.from(String(str)).toString("base64"),
+    atob: (b64) => Buffer.from(String(b64), "base64").toString("utf-8"),
+    concat: (...args) => args.flat().map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(''),
+    formUrlencode: (obj) => {
+        if (!obj || typeof obj !== 'object') return String(obj || '');
+        const params = new URLSearchParams();
+        for (const [key, val] of Object.entries(obj)) {
+            params.append(key, typeof val === 'object' ? JSON.stringify(val) : String(val));
+        }
+        return params.toString();
+    }
+};
+
 const API = {
     init,
-    executeProxy,
+    executeApi,
     request,
     generateJWT,
     verifySignature,
-    formatRequestBody,
     makeHttpRequest,
     processOperators,
     processOperator,
@@ -45,141 +70,187 @@ const API = {
     normalizeConfig
 };
 
-/**
- * Initializes the API Gateway execution environment.
- * @param {Object} Server - CoCreateServer context instance.
- * @returns {Promise<Object>} Fully initialized API module context.
- */
 export async function init(Server) {
     server = Server;
     wsManager = server.wsManager;
     crud = server.crud;
 
     wsManager.on("api", (data) => {
-        executeProxy(data);
+        executeApi(data);
     });
 
     wsManager.on("endpoint", (data) => {
-        executeProxy(data);
+        executeApi(data);
     });
 
-    console.log("[@cocreate/api] Gateway successfully initialized with adaptive API normalizers.");
     return API;
 }
 
-export function normalizeConfig(apiConfig, name, env = 'production') {
+export function normalizeConfig(apiConfig, name) {
     let key = null;
-    let webhooks = null;
     let url = null;
     let headers = {};
-    let authType = "none";
-    let headerName = null;
-    let endpoint = null;
 
     if (typeof apiConfig === 'string') {
         key = apiConfig;
     } else if (apiConfig && typeof apiConfig === 'object') {
         url = apiConfig.url;
         headers = apiConfig.headers || {};
-        authType = apiConfig.authType || "none";
-        headerName = apiConfig.headerName || null;
-        endpoint = apiConfig.endpoint || {};
 
-        let targetBlock = apiConfig;
-        if (apiConfig[env]) {
-            targetBlock = apiConfig[env];
-        }
-
-        if (typeof targetBlock === 'string') {
-            key = targetBlock;
-        } else if (targetBlock && typeof targetBlock === 'object') {
-            if (targetBlock.key) {
-                if (typeof targetBlock.key === 'string') {
-                    key = targetBlock.key;
-                } else if (typeof targetBlock.key === 'object') {
-                    key = targetBlock.key.apiKey || targetBlock.key.key || JSON.stringify(targetBlock.key);
-                }
-            } else if (targetBlock.apiKey) {
-                key = targetBlock.apiKey;
+        if (apiConfig.key) {
+            if (typeof apiConfig.key === 'string') {
+                key = apiConfig.key;
+            } else if (typeof apiConfig.key === 'object') {
+                key = apiConfig.key.apiKey || apiConfig.key.key || JSON.stringify(apiConfig.key);
             }
-
-            webhooks = targetBlock.webhooks || apiConfig.webhooks;
-            if (targetBlock.url) url = targetBlock.url;
-            if (targetBlock.headers) headers = { ...headers, ...targetBlock.headers };
-            if (targetBlock.authType) authType = targetBlock.authType;
-            if (targetBlock.headerName) headerName = targetBlock.headerName;
-            if (targetBlock.endpoint) endpoint = { ...endpoint, ...targetBlock.endpoint };
+        } else if (apiConfig.apiKey) {
+            key = apiConfig.apiKey;
         }
+
+        if (apiConfig.url) url = apiConfig.url;
+        if (apiConfig.headers) headers = { ...headers, ...apiConfig.headers };
     }
 
-    return { key, webhooks, url, headers, authType, headerName, endpoint };
+    return { key, url, headers };
 }
 
-export async function executeProxy(data) {
+export async function executeApi(data, parentContext = null) {
     try {
-        if (!data.method || !data.endpoint) {
-            throw new Error("Proxy request is missing 'method' or 'endpoint' directives.");
+        // SECURITY FIREWALL: Parent contexts and authenticated socket boundaries take absolute priority 
+        // over raw payload elements to prevent config-driven cross-tenant data leaks or privilege escalations.
+        const orgId = parentContext?.organization_id || data.socket?.organization_id || data.organization_id;
+        const host = parentContext?.host || data.socket?.host || data.host;
+
+        // PATH A: Native Execution of a Pre-prepared HTTP Request Object
+        if (data.url && data.method) {
+            const timeout = data.timeout || 15000;
+            const options = {
+                method: data.method.toUpperCase(),
+                headers: data.headers || {},
+                timeout
+            };
+
+            if (data.body) {
+                options.body = typeof data.body === 'object' ? JSON.stringify(data.body) : data.body;
+            }
+
+            const response = await makeHttpRequest(data.url, options);
+            const responsePayload = await response.json();
+
+            if (data.socket && wsManager) {
+                data.response = responsePayload;
+                wsManager.send(data);
+            }
+            return responsePayload;
         }
 
-        const name = data.method.split(/[./]/)[0];
+        // PATH B: Standard Dynamic Configuration Resolve & Execute
+        if (!data.method || !data.endpoint) {
+            throw new Error("API execution request is missing 'method' or 'endpoint' directives.");
+        }
+
+        const providerName = data.method.split(/[./]/)[0];
         const httpMethod = data.endpoint.split(" ")[0].toUpperCase();
 
-        const rawApiConfig = await getApiConfig(data, name);
+        const endpointQuery = {
+            method: 'object.read',
+            array: 'endpoints',
+            organization_id: orgId,
+            host: host, // Carry host forward
+            $filter: {
+                query: { endpoint: data.endpoint, organization_id: orgId },
+                limit: 1
+            }
+        };
+        const endpointResponse = await crud.send(endpointQuery);
+        const endpointConfig = endpointResponse?.object?.[0] || {};
+
+        // Fetch provider credentials with full environmental scope intact
+        const rawApiConfig = await getApiConfig({ organization_id: orgId, host }, providerName);
         if (!rawApiConfig) {
-            throw new Error(`Configuration not registered for provider: '${name}'.`);
+            throw new Error(`Connection setting not registered for provider: '${providerName}'.`);
+        }
+        const apiConfig = normalizeConfig(rawApiConfig, providerName);
+
+        // Share parent context if executing within a nested macro frame
+        const apiContext = parentContext || {
+            data: data,
+            event: {},
+            actions: [],
+            organization_id: orgId,
+            host: host, // Lock host context into AST evaluation loop
+            crud,
+            wsManager,
+            key: apiConfig.key,
+            config: apiConfig
+        };
+
+        const actions = endpointConfig.actions || endpointConfig.action;
+        if (actions) {
+            if (Array.isArray(actions)) {
+                for (let i = 0; i < actions.length; i++) {
+                    const result = await processOperators(apiContext, actions[i]);
+                    apiContext.actions.push(result); // Saved flattened memory profile
+                }
+                const finalMacroResult = apiContext.actions[apiContext.actions.length - 1];
+                if (finalMacroResult !== undefined) {
+                    data[providerName] = finalMacroResult;
+                }
+            } else {
+                const result = await processOperators(apiContext, actions);
+                apiContext.actions.push(result);
+                if (result !== undefined) {
+                    data[providerName] = result;
+                }
+            }
+
+            if (data.socket && wsManager) {
+                wsManager.send(data);
+            }
+            return;
         }
 
-        const env = data.env || process.env.NODE_ENV || 'production';
-        const apiConfig = normalizeConfig(rawApiConfig, name, env);
+        // --- Standard Outbound Construction Path ---
         if (!apiConfig.url) {
-            throw new Error(`Configuration missing 'url' base for provider '${name}'.`);
+            throw new Error(`Configuration missing 'url' base for provider '${providerName}'.`);
         }
 
-        const override = apiConfig.endpoint?.[data.endpoint] || {};
         let url = apiConfig.url.endsWith("/") ? apiConfig.url.slice(0, -1) : apiConfig.url;
-
-        let endpointPath = override.path || data.endpoint.split(" ")[1];
+        let endpointPath = endpointConfig.path || data.endpoint.split(" ")[1];
         url += endpointPath.startsWith("/") ? endpointPath : `/${endpointPath}`;
 
-        if (data[name] && data[name].$searchParams) {
-            url += objectToSearchParams(data[name].$searchParams);
-            delete data[name].$searchParams;
+        if (data[providerName] && data[providerName].$searchParams) {
+            url += objectToSearchParams(data[providerName].$searchParams);
+            delete data[providerName].$searchParams;
         }
 
-        let headers = { ...(apiConfig.headers || {}), ...(override.headers || {}) };
+        let headers = { ...(apiConfig.headers || {}), ...(endpointConfig.headers || {}) };
+        headers = await processOperators(apiContext, headers);
 
-        // Process operators inside outbound headers (Resolves $jwt, $concat, $base64, keys, etc.)
-        headers = await processOperators(data, {}, headers);
-
-        const authType = apiConfig.authType;
-        if (apiConfig.key && authType && authType !== "none" && !headers["Authorization"]) {
-            if (authType === "bearer") {
-                headers["Authorization"] = `Bearer ${apiConfig.key}`;
-            } else if (authType === "custom-header" && apiConfig.headerName) {
-                headers[apiConfig.headerName] = apiConfig.key;
-            }
-        }
-
-        let formatType = data.formatType || "json";
         const timeout = 15000;
         let options = { method: httpMethod, headers, timeout };
 
-        if (!["GET", "HEAD"].includes(httpMethod) && data[name]) {
-            // Process operators inside the outbound request body payload dynamically!
-            data[name] = await processOperators(data, {}, data[name]);
-            const { body, contentTypeHeader } = formatRequestBody(data[name], formatType);
-            options.body = body;
-            if (contentTypeHeader && !headers["Content-Type"]) {
-                options.headers["Content-Type"] = contentTypeHeader;
+        if (!["GET", "HEAD"].includes(httpMethod) && data[providerName]) {
+            const bodyPayload = await processOperators(apiContext, data[providerName]);
+            
+            if (typeof bodyPayload === 'object' && bodyPayload !== null) {
+                options.body = JSON.stringify(bodyPayload);
+                if (!headers["Content-Type"]) {
+                    options.headers["Content-Type"] = "application/json; charset=utf-8";
+                }
+            } else {
+                options.body = String(bodyPayload);
             }
         }
 
         const response = await makeHttpRequest(url, options);
-        data[name] = await response.json();
+        const responsePayload = await response.json();
+        data[providerName] = responsePayload;
 
-        if (wsManager) {
+        if (data.socket && wsManager) {
             wsManager.send(data);
         }
+        return responsePayload;
     } catch (error) {
         data.error = error.message;
         if (error.response) {
@@ -190,6 +261,7 @@ export async function executeProxy(data) {
         if (data.socket && wsManager) {
             wsManager.send(data);
         }
+        throw error;
     }
 }
 
@@ -206,23 +278,27 @@ export async function request(req, res) {
             return res.end(JSON.stringify({ error: "Organization mapping not found" }));
         }
 
-        const pathSegments = urlObject.pathname.split("/");
-        const apiName = pathSegments[2];
-        const webhookName = pathSegments[3];
+        const webhookPath = urlObject.pathname.replace(/^\/webhooks\//, "");
 
-        if (!organization.apis || !organization.apis[apiName]) {
-            res.writeHead(404, { "Content-Type": "application/json" });
-            return res.end(JSON.stringify({ error: `Provider configuration '${apiName}' not found.` }));
-        }
-
-        const rawApiConfig = organization.apis[apiName];
-        const env = req.headers['x-env'] || process.env.NODE_ENV || 'production';
-        const apiConfig = normalizeConfig(rawApiConfig, apiName, env);
-        const webhookConfig = rawApiConfig.webhooks?.[webhookName];
+        const webhookQuery = {
+            method: 'object.read',
+            array: 'webhooks',
+            organization_id: organization._id,
+            host: hostname, // Maintain active host environment
+            $filter: {
+                query: { 
+                    path: webhookPath, 
+                    organization_id: organization._id 
+                },
+                limit: 1
+            }
+        };
+        const webhookResponse = await crud.send(webhookQuery);
+        const webhookConfig = webhookResponse?.object?.[0];
 
         if (!webhookConfig) {
             res.writeHead(404, { "Content-Type": "application/json" });
-            return res.end(JSON.stringify({ error: `Webhook endpoint configuration '${webhookName}' not found.` }));
+            return res.end(JSON.stringify({ error: `Webhook configuration for path '${webhookPath}' not found.` }));
         }
 
         let rawBody = "";
@@ -232,19 +308,37 @@ export async function request(req, res) {
             req.on("error", reject);
         });
 
-        const dataContext = {
-            req,
-            res,
-            host: hostname,
-            organization,
+        const queryParams = Object.fromEntries(urlObject.searchParams.entries());
+
+        let parsedEvent = {};
+        if (rawBody) {
+            try {
+                parsedEvent = JSON.parse(rawBody);
+            } catch {
+                parsedEvent = { rawBody };
+            }
+        }
+
+        const context = {
+            data: {},
+            event: parsedEvent,
+            actions: [],
+            request: req,
+            response: res,
+            rawBody: rawBody,
+            host: hostname, // Propagate verified edge hostname
+            organization: organization,
             organization_id: organization._id,
-            rawBody
+            crud: crud,
+            wsManager: wsManager
         };
+
+        context.request.query = queryParams;
 
         if (webhookConfig.authenticate) {
             const auth = webhookConfig.authenticate;
             if (auth.method === "webhooks.constructEvent" && Array.isArray(auth.parameters)) {
-                const resolvedParams = await processOperators(dataContext, {}, [...auth.parameters]);
+                const resolvedParams = await processOperators(context, [...auth.parameters]);
                 const payload = resolvedParams[0];
                 const signature = resolvedParams[1];
                 const secret = resolvedParams[2];
@@ -256,143 +350,200 @@ export async function request(req, res) {
             }
         }
 
-        let parsedEvent = {};
-        if (rawBody) {
-            try {
-                parsedEvent = JSON.parse(rawBody);
-            } catch {
-                parsedEvent = { rawBody };
+        let executeOperations = null;
+        const actionConfig = webhookConfig.action;
+
+        if (actionConfig) {
+            if (typeof actionConfig === 'string') {
+                const actionName = await processOperators(context, actionConfig);
+                if (actionName && webhookConfig.actions?.[actionName]) {
+                    executeOperations = webhookConfig.actions[actionName];
+                }
+            } else {
+                executeOperations = actionConfig;
             }
         }
 
-        let eventNameKey = webhookConfig.eventNameKey || rawApiConfig.eventNameKey;
-        let eventName = getValueFromObject(parsedEvent, eventNameKey);
-
-        if (eventName && webhookConfig.events?.[eventName]) {
-            let executeOperations = webhookConfig.events[eventName];
-            await processOperators(dataContext, parsedEvent, executeOperations);
+        if (executeOperations) {
+            if (Array.isArray(executeOperations)) {
+                for (let i = 0; i < executeOperations.length; i++) {
+                    const stepResult = await processOperators(context, executeOperations[i]);
+                    context.actions.push(stepResult);
+                }
+            } else if (typeof executeOperations === 'object' && executeOperations !== null) {
+                const stepResult = await processOperators(context, [executeOperations]);
+                context.actions.push(stepResult);
+            }
         }
 
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ message: "Webhook processed successfully" }));
+        // Native Stream Inspection: Fall back to default 200 OK only if actions did not write or end the stream
+        if (res && !res.writableEnded) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ 
+                message: "Webhook processed successfully", 
+                payload: context.actions[context.actions.length - 1] || {} 
+            }));
+        }
     } catch (error) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Invalid webhook request format", message: error.message }));
+        if (res && !res.writableEnded) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid webhook request format", message: error.message }));
+        }
     }
 }
 
-export async function processOperators(data, event, execute) {
+export async function processOperators(context, execute) {
     if (Array.isArray(execute)) {
-        // Evaluate items within an array
         let evaluatedArray = [];
         for (let index = 0; index < execute.length; index++) {
-            evaluatedArray[index] = await processOperators(data, event, execute[index]);
+            evaluatedArray[index] = await processOperators(context, execute[index]);
         }
         return evaluatedArray;
     } else if (typeof execute === "object" && execute !== null) {
         const keys = Object.keys(execute);
         const operatorKey = keys.find(k => k.startsWith("$") && !["$storage", "$database", "$array", "$filter"].includes(k));
         
-        // Collapse single-operator objects (e.g., { "$jwt": { ... } } or { "$concat": [ ... ] })
-        // This preserves the exact return type (Object, Buffer, String) natively!
         if (operatorKey && keys.length === 1) {
-            return await processOperator(data, event, operatorKey, execute[operatorKey]);
+            return await processOperator(context, operatorKey, execute[operatorKey]);
         }
 
-        // Create a fresh object to safely assign dynamically evaluated keys
         let evaluatedObject = {};
-        
         for (let key of keys) {
             let finalKey = key;
 
-            // 1. Dynamic Key Resolution
-            // If the key is an operator, evaluate it to figure out what the key name should be.
             if (key.startsWith("$") && !["$storage", "$database", "$array", "$filter"].includes(key)) {
-                let resolvedKey = await processOperator(data, event, key, execute[key]);
-                // Keys must evaluate to Strings or Numbers.
+                let resolvedKey = await processOperator(context, key);
                 if (typeof resolvedKey === "string" || typeof resolvedKey === "number") {
                     finalKey = String(resolvedKey);
                 }
             }
 
-            // 2. Dynamic Value Resolution
             let finalValue = execute[key];
             if (typeof finalValue === "string" && finalValue.startsWith("$") && !["$storage", "$database", "$array", "$filter"].includes(finalValue)) {
-                finalValue = await processOperator(data, event, finalValue);
+                finalValue = await processOperator(context, finalValue);
             } else if (Array.isArray(finalValue) || (typeof finalValue === "object" && finalValue !== null)) {
-                finalValue = await processOperators(data, event, finalValue);
+                finalValue = await processOperators(context, finalValue);
             }
 
-            // Assign the evaluated value to the evaluated key
             evaluatedObject[finalKey] = finalValue;
         }
         
         return evaluatedObject;
     } else if (typeof execute === "string" && execute.startsWith("$") && !["$storage", "$database", "$array", "$filter"].includes(execute)) {
-        return await processOperator(data, event, execute);
+        return await processOperator(context, execute);
     }
 
     return execute;
 }
 
-export async function processOperator(data, event, operator, context) {
-    let result;
-    if (operator.startsWith("$data.")) {
-        return getValueFromObject(data, operator.substring(6));
-    } else if (operator.startsWith("$req")) {
-        return getValueFromObject(data, operator.substring(1));
-    } else if (operator.startsWith("$header")) {
-        return getValueFromObject(data.req, operator.substring(1));
-    } else if (operator.startsWith("$rawBody")) {
-        return getValueFromObject(data, operator.substring(1));
-    } else if (operator.startsWith("$crud")) {
-        let results = context;
-        let isObject = false;
-        if (!Array.isArray(results)) {
-            isObject = true;
-            results = [results];
+export async function processOperator(context, operator, args) {
+    if (args === undefined) {
+        if (operator.startsWith("$data.")) {
+            return getValueFromObject(context.data, operator.substring(6));
+        } else if (operator === "$data") {
+            return context.data;
+        } else if (operator.startsWith("$event.")) {
+            const result = getValueFromObject(context.event, operator.substring(7));
+            return await processOperators(context, result);
+        } else if (operator === "$event") {
+            return await processOperators(context, context.event);
+        } else if (operator.startsWith("$actions.")) {
+            return getValueFromObject(context.actions, operator.substring(9));
+        } else if (operator === "$actions") {
+            return context.actions;
+        } else if (operator.startsWith("$request.")) {
+            return getValueFromObject(context.request, operator.substring(9));
+        } else if (operator === "$request") {
+            return context.request;
+        } else if (operator.startsWith("$header.")) {
+            const headerKey = operator.substring(8).toLowerCase();
+            return context.request?.headers?.[headerKey];
+        } else if (operator === "$rawBody") {
+            return context.rawBody;
         }
+    }
 
-        for (let i = 0; i < results.length; i++) {
-            results[i] = await processOperators(data, event, results[i]);
-            results[i] = await crud.send(results[i]);
-            if (operator.startsWith("$crud.")) {
-                results[i] = getValueFromObject(results[i], operator.substring(6));
-            }
-            results[i] = await processOperators(data, event, results[i]);
-        }
-
-        if (isObject) results = results[0];
-        return results;
-    } else if (operator.startsWith("$socket")) {
-        context = await processOperators(data, event, context);
-        result = await wsManager.send(context);
-        if (operator.startsWith("$socket.")) {
-            result = getValueFromObject(result, operator.substring(8));
-        }
-        return await processOperators(data, event, result);
-    } else if (operator.startsWith("$event")) {
-        if (operator.startsWith("$event.")) {
-            result = getValueFromObject(event, operator.substring(7));
-        }
-        return await processOperators(data, event, result);
-    } else if (operator === "$jwt") {
-        // Resolves declarative JWT parameters into an active cryptographic string signature
-        const config = await processOperators(data, event, context);
-        const privateKey = config.privateKey;
+    if (operator === "$jwt") {
+        const evaluatedContext = args !== undefined ? await processOperators(context, args) : {};
+        const privateKey = evaluatedContext.privateKey;
         if (!privateKey) throw new Error("Missing cryptographic signing key inside $jwt context parameters");
-        return generateJWT(config, privateKey);
-    } else if (operator === "$concat") {
-        // Concatenates an array of strings/operators, e.g., ["Bearer ", { "$jwt": { ... } }]
-        const elements = await processOperators(data, event, context);
-        if (Array.isArray(elements)) {
-            return elements.join("");
+        return generateJWT(evaluatedContext, privateKey);
+    }
+
+    const cleanPath = operator.startsWith("$") ? operator.substring(1) : operator;
+    const parts = cleanPath.split('.');
+    
+    const Sandbox = {
+        ...NativeSandbox,
+        crud: context.crud,
+        socket: context.wsManager,
+        wsManager: context.wsManager,
+        request: context.request,
+        response: context.response,
+        key: context.key,
+        config: context.config,
+        organization_id: context.organization_id,
+        host: context.host, // Seal active host into AST sandbox environment
+        api: {
+            send: async (apiData) => {
+                return await executeApi(apiData, context);
+            }
         }
-        return String(elements);
-    } else if (operator === "$base64") {
-        // Base64 encodes a dynamic string context (ideal for Basic Authentication)
-        const value = await processOperators(data, event, context);
-        return Buffer.from(String(value)).toString("base64");
+    };
+
+    let target = Sandbox[parts[0]];
+    let parentContext = Sandbox;
+
+    if (target !== undefined) {
+        for (let i = 1; i < parts.length; i++) {
+            parentContext = target;
+            target = target[parts[i]];
+            if (target === undefined) break;
+        }
+
+        if (typeof target === 'function') {
+            let argsArray = [];
+            if (args !== undefined) {
+                // Check if the argument is explicitly formatted using our human-friendly parameter operators
+                if (typeof args === 'object' && args !== null && (args.$args !== undefined || args.$arguments !== undefined)) {
+                    const explicitArgs = args.$args !== undefined ? args.$args : args.$arguments;
+                    
+                    if (Array.isArray(explicitArgs)) {
+                        // Multi-parameter routing: Evaluate each index independently
+                        argsArray = [];
+                        for (let i = 0; i < explicitArgs.length; i++) {
+                            argsArray.push(await processOperators(context, explicitArgs[i]));
+                        }
+                    } else {
+                        // Single-parameter fallback: Spelled out explicitly but contains a single expression
+                        const evaluatedSingle = await processOperators(context, explicitArgs);
+                        argsArray = [evaluatedSingle];
+                    }
+                } else {
+                    // Standard / Implicit routing: Treat the entire value as a single, isolated argument (arrays behave like arrays!)
+                    const evaluatedSingle = await processOperators(context, args);
+                    argsArray = [evaluatedSingle];
+                }
+            }
+            
+            // SECURITY FIREWALL: Forcefully overwrite parameters for local system calls 
+            // to align with the sealed context of the authenticated user.
+            if (parentContext === context.crud || parentContext === context.wsManager) {
+                if (argsArray.length === 0) {
+                    argsArray.push({
+                        organization_id: context.organization_id,
+                        host: context.host
+                    });
+                } else if (argsArray.length > 0 && typeof argsArray[0] === 'object' && argsArray[0] !== null) {
+                    argsArray[0].organization_id = context.organization_id;
+                    argsArray[0].host = context.host; // Lock environment isolation parameters down
+                }
+            }
+
+            return await target.apply(parentContext, argsArray);
+        } else if (target !== undefined) {
+            return target;
+        }
     }
 
     return operator;
@@ -425,7 +576,6 @@ export function verifySignature(payload, signature, secret, algorithm = 'sha256'
         hmac.update(payload);
         const expectedSignature = hmac.digest('hex');
         
-        // Use timingSafeEqual to prevent timing attacks
         return crypto.timingSafeEqual(
             Buffer.from(expectedSignature),
             Buffer.from(signature)
@@ -434,35 +584,6 @@ export function verifySignature(payload, signature, secret, algorithm = 'sha256'
         console.error('[@cocreate/api] Failed signature verification:', err);
         return false;
     }
-}
-
-export function formatRequestBody(payload, formatType = "json") {
-    let body = null;
-    let contentTypeHeader = null;
-
-    try {
-        switch (formatType.toLowerCase()) {
-            case "json":
-                body = JSON.stringify(payload);
-                contentTypeHeader = "application/json; charset=utf-8";
-                break;
-            case "form-urlencoded":
-                body = new URLSearchParams(payload).toString();
-                contentTypeHeader = "application/x-www-form-urlencoded; charset=utf-8";
-                break;
-            case "text":
-                body = typeof payload === "string" ? payload : JSON.stringify(payload);
-                contentTypeHeader = "text/plain; charset=utf-8";
-                break;
-            default:
-                body = JSON.stringify(payload);
-                contentTypeHeader = "application/json; charset=utf-8";
-        }
-    } catch (error) {
-        console.error(`[@cocreate/api] Error formatting body structure as ${formatType}:`, error);
-    }
-
-    return { body, contentTypeHeader };
 }
 
 export async function makeHttpRequest(url, options) {
@@ -500,11 +621,31 @@ export async function makeHttpRequest(url, options) {
 }
 
 export async function getApiConfig(data, name) {
-    const organization = await crud.getOrganization(data);
-    if (organization.error) throw new Error(organization.error);
-    if (!organization.apis) throw new Error("Missing secure api configuration block in organization profile.");
-    if (!organization.apis[name]) throw new Error(`Integration settings are missing for provider: '${name}'`);
-    return organization.apis[name];
+    let orgId = data.organization_id;
+    let host = data.host;
+    
+    if (!orgId) {
+        const organization = await crud.getOrganization(data); // uses host inside data to lookup org
+        if (organization.error) throw new Error(organization.error);
+        orgId = organization._id;
+    }
+
+    const query = {
+        method: 'object.read',
+        array: 'apis',
+        organization_id: orgId,
+        host: host, // Keep environment host isolation contact
+        $filter: {
+            query: { name: name, organization_id: orgId },
+            limit: 1
+        }
+    };
+    
+    const response = await crud.send(query);
+    const apiConfig = response?.object?.[0];
+
+    if (!apiConfig) throw new Error(`Integration settings are missing for provider: '${name}'`);
+    return apiConfig;
 }
 
 export default API;
