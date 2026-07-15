@@ -45,6 +45,14 @@
   "type": "module",
   "main": "./src/server.js",
   "browser": "./src/client.js",
+  "exports": {
+    ".": {
+      "node": "./src/server.js",
+      "deno": "./src/server.js",
+      "browser": "./src/client.js",
+      "default": "./src/server.js"
+    }
+  },
   "dependencies": {
     "@cocreate/actions": "^1.21.4",
     "@cocreate/crud-client": "^1.34.6",
