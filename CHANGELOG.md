@@ -1,3 +1,21 @@
+# [1.23.0](https://github.com/CoCreate-app/CoCreate-api/compare/v1.22.5...v1.23.0) (2026-07-17)
+
+
+### Bug Fixes
+
+* bump package versions ([c00d388](https://github.com/CoCreate-app/CoCreate-api/commit/c00d388116a8580d7fba19d32e4f963c9399961a))
+* removed post install and add add packages to apprved list ([ae349df](https://github.com/CoCreate-app/CoCreate-api/commit/ae349df51e715e4de1ec26df0a3d0f0cf4e947bb))
+* semantic version handling ([09356af](https://github.com/CoCreate-app/CoCreate-api/commit/09356af9dc8096ba59687cc8edd415da960ef176))
+* update module export syntax in release configuration ([0f7d0c1](https://github.com/CoCreate-app/CoCreate-api/commit/0f7d0c180a143ecb2d035febc8cfdb07f27a46f6))
+
+
+### Features
+
+* add CoCreate API client and server modules ([9eb47fd](https://github.com/CoCreate-app/CoCreate-api/commit/9eb47fd5506b69678a52afed78c3c7f700947a55))
+* add export mappings for server and client modules in package.json ([146c96b](https://github.com/CoCreate-app/CoCreate-api/commit/146c96b07b51efcceb87ba11a8ca77465caf32f6))
+* enhance API execution flow and improve configuration handling ([f81a7ac](https://github.com/CoCreate-app/CoCreate-api/commit/f81a7acb459d7f7a24ce4de9b9613016af297bdd))
+* update automated workflow and release configuration for improved semantic release handling ([d7caf5d](https://github.com/CoCreate-app/CoCreate-api/commit/d7caf5db97dcc53ffecee43beb5842dcb903466b))
+
 ## [1.22.5](https://github.com/CoCreate-app/CoCreate-api/compare/v1.22.4...v1.22.5) (2025-12-26)
 
 
