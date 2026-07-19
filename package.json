@@ -1,24 +1,21 @@
 {
   "name": "@cocreate/api",
   "version": "1.23.2",
-  "description": "A simple api helper component in vanilla javascript used by JavaScript developers to create thirdparty api intergrations. CoCreate-api includes the client component and server side for api processing. Thirdparty apis can be accessible using HTML5 attributes and/or JavaScript API. ",
+  "description": "A secure, multi-tenant API execution gateway and proxy layer that dynamically resolves endpoint actions, processes AST micro-operators, handles webhooks, and manages third-party integrations with strict tenant environment isolation.",
   "keywords": [
-    "thirdparty-api-intergration",
-    "thirdparty-api-tool",
-    "cocreate-api",
-    "cocreate",
-    "no-code-framework",
-    "cocreatejs",
-    "cocreatejs-component",
-    "cocreate-framework",
-    "no-code",
-    "low-code",
-    "realtime",
-    "realtime-framework",
-    "collaboration",
-    "shared-editing",
-    "html5-framework",
-    "javascript-framework"
+    "api-orchestration",
+    "webhook-orchestration",
+    "macro-execution",
+    "api-gateway",
+    "api-proxy",
+    "multi-tenant",
+    "ast-interpreter",
+    "sandbox",
+    "jwt-generator",
+    "signature-verification",
+    "websocket",
+    "serverless-runtime",
+    "tenant-isolation"
   ],
   "publishConfig": {
     "access": "public"

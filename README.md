@@ -1,91 +1,166 @@
-# CoCreate-api
+# @cocreate/api
 
-A simple api helper component in vanilla javascript used by JavaScript developers to create thirdparty api intergrations. CoCreate-api includes the client component and server side for api processing. Thirdparty apis can be accessible using HTML5 attributes and/or JavaScript API. Take it for a spin in our [playground!](https://cocreate.app/docs/api)
+A dynamic, multi-tenant API execution gateway, proxy engine, and webhook orchestration routing layer. It securely manages distributed integration architectures, allowing applications to configure, evaluate, and execute complex third-party API configurations and multi-step macro workflows on the fly. By coupling an Abstract Syntax Tree (AST) evaluation sandbox (`NativeSandbox`) with strict tenant environmental isolation, it transforms declarative configurations into low-latency outbound integrations and secure inbound webhooks without introducing cross-tenant data leaks.
 
-![minified](https://img.badgesize.io/https://cdn.cocreate.app/api/latest/CoCreate-api.min.js?style=flat-square&label=minified&color=orange)
-![gzip](https://img.badgesize.io/https://cdn.cocreate.app/api/latest/CoCreate-api.min.js?compression=gzip&style=flat-square&label=gzip&color=yellow)
-![brotli](https://img.badgesize.io/https://cdn.cocreate.app/api/latest/CoCreate-api.min.js?compression=brotli&style=flat-square&label=brotli)
-![GitHub latest release](https://img.shields.io/github/v/release/CoCreate-app/CoCreate-api?style=flat-square)
-![License](https://img.shields.io/github/license/CoCreate-app/CoCreate-api?style=flat-square)
-![Hiring](https://img.shields.io/static/v1?style=flat-square&label=&message=Hiring&color=blueviolet)
+---
 
-![CoCreate-api](https://cdn.cocreate.app/docs/CoCreate-api.gif)
+## Table of Contents
 
-## [Docs & Demo](https://cocreate.app/docs/api)
+* [Features](https://www.google.com/search?q=%23features)
+* [Dynamic Operations Sandbox](https://www.google.com/search?q=%23dynamic-operations-sandbox)
+* [Installation](https://www.google.com/search?q=%23installation)
+* [Usage](https://www.google.com/search?q=%23usage)
+* [How it Works](https://www.google.com/search?q=%23how-it-works)
+* [Architecture and Payload Specs](https://www.google.com/search?q=%23architecture-and-payload-specs)
+* [Security Implementations](https://www.google.com/search?q=%23security-implementations)
+* [How to Contribute](https://www.google.com/search?q=%23how-to-contribute)
+* [License](https://www.google.com/search?q=%23license)
 
-For a complete guide and working demo refer to the [doumentation](https://cocreate.app/docs/api)
+---
 
-## CDN
+## Features
 
-```html
-<script src="https://cdn.cocreate.app/api/latest/CoCreate-api.min.js"></script>
+* **Abstract Syntax Tree (AST) Micro-Operators:** Evaluates functional configuration contexts inline, supporting expressive syntax tags (like `$data`, `$event`, `$actions`, and `$request`) along with custom business logic operators.
+* **Tenant Environmental Isolation Firewall:** Guarantees cryptographic data partitioning by intercepting execution matrices and forcefully injecting bound `organization_id` and verified `host` values into core operations.
+* **Real-Time WebSocket Integration Matrix:** Seamlessly hooks into live server networks (`wsManager`), listening for incoming `api` and `endpoint` actions and streaming real-time operational state payloads directly back to the client.
+* **Dual Outbound Execution Vectors:** Wire-speeds native, pre-constructed HTTP payloads instantly, or dynamically builds custom multi-step outbound integrations by resolving runtime metadata against persistence layers.
+* **Cryptographic Signatures & JWT Orchestration:** Features native, low-latency hooks to generate JSON Web Tokens (`$jwt`) using HMAC-SHA256, alongside timing-attack-safe webhook signature verification (`verifySignature`).
+* **Sealed AST Runtime Sandbox:** Features a hardened utility matrix containing sandboxed global objects (`JSON`, `Array`, `Math`) and helper methods (like Base64 encoding/decoding and URL encoders), safely wrapping calculations outside the global scope.
+* **Native Edge Stream Inspection:** Inspects active server response buffers automatically, failing back to a clean 200 OK only if macro pipelines didn't forcefully complete or close the stream.
+
+---
+
+## Dynamic Operations Sandbox
+
+The engine evaluates standard properties and custom functional variables using a predefined sandbox layer. This allows configuration profiles to extract fields safely on the fly:
+
+| Core Operator Scope | Extracted Source Value |
+| --- | --- |
+| **`$data`** | Extracts standard key parameters from the active input execution payload (`data`). |
+| **`$event`** | Parses raw, incoming JSON parameters transmitted via active webhook streams. |
+| **`$actions`** | Exposes an array of historical execution artifacts from previous macro pipeline links. |
+| **`$request` / `$header**` | Exposes underlying HTTP request properties, methods, and incoming network parameters. |
+| **`$jwt`** | Triggers an active cryptographic signing loop, building a secure JWT token from properties. |
+
+---
+
+## Installation
+
+```bash
+npm install @cocreate/api
+
 ```
 
-```html
-<script src="https://cdn.cocreate.app/api/latest/CoCreate-api.min.css"></script>
+---
+
+## Usage
+
+### Module Initialization
+
+Bind the API framework directly during the bootstrapping phase of your core `CoCreateServer` application matrix:
+
+```javascript
+import apiGateway from '@cocreate/api';
+import { CoCreateServer } from '@cocreate/server';
+
+// Boot the primary application server instance
+const serverContext = await CoCreateServer.start();
+
+// Initialize the API engine and register WebSocket listeners
+await apiGateway.init(serverContext);
+
 ```
 
-## NPM
+### Direct Programmatic API Execution
 
-```shell
-$ npm i @cocreate/api
+Execute complex third-party outbound macro operations using unified integration objects:
+
+```javascript
+import apiGateway from '@cocreate/api';
+
+// The method identifies the provider credentials, and the endpoint resolves the data model
+const payload = {
+  organization_id: "64b9a32e18f21bc56789abcd",
+  method: "stripe",
+  endpoint: "POST /v1/customers",
+  stripe: {
+    email: "$data.userEmail",
+    metadata: {
+      workspace: "production"
+    }
+  },
+  userEmail: "developer@cocreate.app"
+};
+
+const result = await apiGateway.executeApi(payload);
+
 ```
 
-## yarn
+---
 
-```shell
-$ yarn install @cocreate/api
-```
+## How it Works
 
-# Table of Contents
+1. **Bootstrap & Event Binding:** During `init()`, the module hooks directly into the server's WebSocket framework (`wsManager`), capturing incoming `api` and `endpoint` event signals to route them to the execution handler.
+2. **Context and Firewall Initialization:** For every outbound execution, the engine evaluates the parameters against a parent context firewall. Security profiles match inbound connections against verified socket bounds, locking `organization_id` and `host` configurations.
+3. **Macro Configuration Resolving:** The engine sends queries through the CRUD synchronization layer to match configuration files against stored endpoints or active integration details inside the database collection.
+4. **AST Matrix Processing:** The router recursively scans headers, parameters, and bodies via `processOperators()`. Found strings matching active variables (e.g., `$` prefixes) are securely compiled in the isolated `NativeSandbox` environment.
+5. **Outbound Network Fetching:** The system builds the options profile, forcefully sets content headers, maps an `AbortController` timeout circuit breaker (15-second cutoff), and runs the task using the system runtime's native `fetch` framework.
+6. **Payload Delivery & Webhook Dispatching:** Webhook targets matching inbound edge rules check security values, run validation rules using timing-safe comparisons, execute steps sequentially, and output structural streams.
 
--   [Table of Contents](#table-of-contents)
--   [Announcements](#announcements)
--   [Roadmap](#roadmap)
--   [How to Contribute](#how-to-contribute)
--   [About](#about)
--   [License](#license)
+---
 
-<a name="announcements"></a>
+## Architecture and Payload Specs
 
-# Announcements
+### Unified Payload Object Schema
 
-All updates to this library are documented in our [CHANGELOG](https://github.com/CoCreate-app/CoCreate-api/blob/master/CHANGELOG.md) and [releases](https://github.com/CoCreate-app/CoCreate-api/releases). You may also subscribe to email for releases and breaking changes.
+The data engine relies heavily on structural, flat parameter objects passed down into the execution chain:
 
-<a name="roadmap"></a>
+| Field Element | Type | Role |
+| --- | --- | --- |
+| `organization_id` | `String` | **Required.** Targets the root tenant profile partition mapping to execution databases. |
+| `method` | `String` | **Required.** The provider identity string (e.g., `"stripe"`) used to fetch integration credentials. |
+| `endpoint` | `String` | **Required.** The operational HTTP verb and route mapping (e.g., `"POST /v1/customers"`) used to match configurations in the endpoints database. |
+| `[providerName]` | `Object` | The input context object named after your provider (e.g., `stripe: { ... }`) holding parameters processed by the AST engine. |
 
-# Roadmap
+### Context Engine Parameter Schema
 
-If you are interested in the future direction of this project, please take a look at our open [issues](https://github.com/CoCreate-app/CoCreate-api/issues) and [pull requests](https://github.com/CoCreate-app/CoCreate-api/pulls). We would love to hear your feedback.
+The API processing network builds a dedicated execution block on every mutation cycle:
 
-<a name="about"></a>
+| Field Element | Type | Role |
+| --- | --- | --- |
+| `data` | `Object` | Input variable parameters sent down from the parent action payload. |
+| `event` | `Object` | The compiled incoming request body extracted from active webhook pipelines. |
+| `actions` | `Array` | A running chronological memory matrix containing results of completed steps. |
+| `organization_id` | `String` | **Required.** Lockout identifier tracking root workspace context. |
+| `host` | `String` | The edge routing host domain verifying tenant environment isolation boundaries. |
+| `crud` / `wsManager` | `Object` | Bound links to internal database adapters and WebSocket server channels. |
 
-# About
+---
 
-CoCreate-api is guided and supported by the CoCreate Developer Experience Team.
+## Security Implementations
 
-Please Email the Developer Experience Team [here](mailto:develop@cocreate.app) in case of any queries.
+> [!WARNING]
+> To prevent config-driven cross-tenant data leaks or privilege escalations, parent context variables and authenticated socket bounds take absolute priority over raw incoming payload attributes.
 
-CoCreate-api is maintained and funded by CoCreate. The names and logos for CoCreate are trademarks of CoCreate, LLC.
+### Context Sandboxing
 
-<a name="contribute"></a>
+Local interface methods (such as direct actions on `crud` or `wsManager`) intercept arguments inside the execution layer. Even if a configuration profile passes a malicious tenant parameter inside an AST macro string, the sandbox engine explicitly overwrites the parameters on execution to align with the sealed context of the authenticated user.
 
-# How to Contribute
+### Timing-Safe Signature Verification
 
-We encourage contribution to our libraries (you might even score some nifty swag), please see our [CONTRIBUTING](https://github.com/CoCreate-app/CoCreate-api/blob/master/CONTRIBUTING.md) guide for details.
+Inbound webhook channels configured with `authenticate` properties execute validation algorithms using a cryptographically secure fixed-time comparison script (`crypto.timingSafeEqual`). This completely mitigates timing-attack vectors targeting system endpoints.
 
-We want this library to be community-driven, and CoCreate led. We need your help to realize this goal. To help make sure we are building the right things in the right order, we ask that you create [issues](https://github.com/CoCreate-app/CoCreate-api/issues) and [pull requests](https://github.com/CoCreate-app/CoCreate-api/pulls) or merely upvote or comment on existing issues or pull requests.
+---
 
-We appreciate your continued support, thank you!
+## How to Contribute
 
-<a name="license"></a>
+We encourage contribution to our libraries (you might even score some nifty swag), please see our [CONTRIBUTING.md](https://cocreatejs.com/docs/api/contributing) guide for details. We want this library to be community-driven, and CoCreate led. We need your help to realize this goal.
 
-# License
+---
+
+## License
 
 This software is dual-licensed under the GNU Affero General Public License version 3 (AGPLv3) and a commercial license.
 
--   **Open Source Use**: For open-source projects and non-commercial use, this software is available under the AGPLv3. The AGPLv3 allows you to freely use, modify, and distribute this software, provided that all modifications and derivative works are also licensed under the AGPLv3. For the full license text, see the [LICENSE file](https://github.com/CoCreate-app/CoCreate-api/blob/master/LICENSE).
-
--   **Commercial Use**: For-profit companies and individuals intending to use this software for commercial purposes must obtain a commercial license. The commercial license is available when you sign up for an API key on our [website](https://cocreate.app). This license permits proprietary use and modification of the software without the copyleft requirements of the AGPLv3. It is ideal for integrating this software into proprietary commercial products and applications.
-
-If you have not purchased a commercial license and intend to use this software for commercial purposes, you are required to sign up for an API key on our website.
+* **Open Source Use:** For open-source projects and non-commercial use, this software is available under the AGPLv3. For the full license text, see the LICENSE file.
+* **Commercial Use:** For-profit companies and individuals intending to use this software for commercial purposes must obtain a commercial license. The commercial license is available when you sign up for an API key on our website.

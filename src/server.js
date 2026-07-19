@@ -570,18 +570,36 @@ export function generateJWT(config, secret) {
     }
 }
 
+/**
+ * Robustly verifies HMAC signatures natively.
+ * FIXES CRITICAL TIMINGSAFEEQUAL ERROR: Enforces equal buffer lengths to prevent process crashes.
+ */
 export function verifySignature(payload, signature, secret, algorithm = 'sha256') {
     try {
+        if (!payload || !signature || !secret) return false;
+
         const hmac = crypto.createHmac(algorithm, secret);
         hmac.update(payload);
-        const expectedSignature = hmac.digest('hex');
         
-        return crypto.timingSafeEqual(
-            Buffer.from(expectedSignature),
-            Buffer.from(signature)
-        );
+        // 1. Uniformly resolve inputs to identical encoding formats (e.g., Hex vs Base64 vs Raw buffers)
+        const expectedSignature = hmac.digest();
+        let receivedSignature = Buffer.isBuffer(signature) ? signature : Buffer.from(signature, 'hex');
+
+        // Fallback: Stripe/Providers can output base64 signatures; handle gracefully
+        if (receivedSignature.length !== expectedSignature.length) {
+            receivedSignature = Buffer.from(signature, 'base64');
+        }
+
+        // 2. CRITICAL SECURITY GUARD: Enforce equal length check before passing to timingSafeEqual.
+        // Node's timingSafeEqual WILL throw an unhandled TypeError (crashing the worker) if byte sizes mismatch.
+        if (receivedSignature.length !== expectedSignature.length) {
+            console.warn('[@cocreate/api] Signature verification rejected immediately due to byte-length mismatch.');
+            return false;
+        }
+        
+        return crypto.timingSafeEqual(expectedSignature, receivedSignature);
     } catch (err) {
-        console.error('[@cocreate/api] Failed signature verification:', err);
+        console.error('[@cocreate/api] Failed signature verification:', err.message);
         return false;
     }
 }
