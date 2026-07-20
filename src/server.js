@@ -23,7 +23,6 @@
 
 import crypto from 'node:crypto';
 import { URL, URLSearchParams } from 'node:url';
-import Config from '@cocreate/config';
 import { getValueFromObject, objectToSearchParams } from '@cocreate/utils';
 
 // Core module references bound dynamically upon initialization
