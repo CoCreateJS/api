@@ -22,39 +22,13 @@
 // For details, visit <https://cocreate.app/licenses/> or contact us at sales@cocreate.app.
 
 import crypto from 'node:crypto';
-import { URL, URLSearchParams } from 'node:url';
-import { getValueFromObject, objectToSearchParams } from '@cocreate/utils';
+import { URL } from 'node:url';
+import { getValueFromObject, objectToSearchParams, astAsync } from '@cocreate/utils';
 
 // Core module references bound dynamically upon initialization
 let server = null;
 let wsManager = null;
 let crud = null;
-
-const NativeSandbox = {
-    Math,
-    Number,
-    String,
-    Boolean,
-    Date,
-    JSON,
-    Array,
-    Object,
-    parseInt,
-    parseFloat,
-    encodeURIComponent,
-    decodeURIComponent,
-    btoa: (str) => Buffer.from(String(str)).toString("base64"),
-    atob: (b64) => Buffer.from(String(b64), "base64").toString("utf-8"),
-    concat: (...args) => args.flat().map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(''),
-    formUrlencode: (obj) => {
-        if (!obj || typeof obj !== 'object') return String(obj || '');
-        const params = new URLSearchParams();
-        for (const [key, val] of Object.entries(obj)) {
-            params.append(key, typeof val === 'object' ? JSON.stringify(val) : String(val));
-        }
-        return params.toString();
-    }
-};
 
 const API = {
     init,
@@ -63,8 +37,6 @@ const API = {
     generateJWT,
     verifySignature,
     makeHttpRequest,
-    processOperators,
-    processOperator,
     getApiConfig,
     normalizeConfig
 };
@@ -113,10 +85,99 @@ export function normalizeConfig(apiConfig, name) {
     return { key, url, headers };
 }
 
+/**
+ * Builds a secure sandboxed execution context for evaluateAST.
+ * Inherits native globals from AST parser automatically, only injecting runtime-specific scopes.
+ */
+function createSandbox(context) {
+    // SECURITY FIREWALL: Automatically proxy local system database calls to seal tenant-isolated metadata.
+    const secureCrud = context.crud ? new Proxy(context.crud, {
+        get(target, prop) {
+            const original = target[prop];
+            if (typeof original === 'function') {
+                return function(...args) {
+                    if (args.length === 0) {
+                        args.push({
+                            organization_id: context.organization_id,
+                            host: context.host
+                        });
+                    } else if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null) {
+                        args[0].organization_id = context.organization_id;
+                        args[0].host = context.host;
+                    }
+                    return original.apply(target, args);
+                };
+            }
+            return original;
+        }
+    }) : undefined;
+
+    const secureWsManager = context.wsManager ? new Proxy(context.wsManager, {
+        get(target, prop) {
+            const original = target[prop];
+            if (typeof original === 'function') {
+                return function(...args) {
+                    if (args.length === 0) {
+                        args.push({
+                            organization_id: context.organization_id,
+                            host: context.host
+                        });
+                    } else if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null) {
+                        args[0].organization_id = context.organization_id;
+                        args[0].host = context.host;
+                    }
+                    return original.apply(target, args);
+                };
+            }
+            return original;
+        }
+    }) : undefined;
+
+    // Only expose full server instance to platform admin organization
+    const isPlatformOrg = server && server.organization_id && (context.organization_id === server.organization_id);
+
+    const sandbox = {
+        // Core Isolated Dynamic AST Scopes
+        data: context.data,
+        event: context.event,
+        actions: context.actions,
+        request: context.request,
+        rawBody: context.rawBody,
+
+        // Safe Proxied System Objects
+        crud: secureCrud,
+        socket: secureWsManager,
+        wsManager: secureWsManager,
+
+        // Host Context Identifiers
+        key: context.key,
+        config: context.config,
+        organization_id: context.organization_id,
+        host: context.host,
+
+        // Custom operators rewritten as sandbox properties
+        api: {
+            send: async (apiData) => {
+                return await executeApi(apiData, context);
+            }
+        },
+        jwt: (args) => {
+            const privateKey = args?.privateKey;
+            if (!privateKey) throw new Error("Missing cryptographic signing key inside $jwt context parameters");
+            return generateJWT(args, privateKey);
+        }
+    };
+
+    // Safely inject elevated server core only when authenticated context is root platform
+    if (isPlatformOrg) {
+        sandbox.server = server;
+    }
+
+    return sandbox;
+}
+
 export async function executeApi(data, parentContext = null) {
     try {
-        // SECURITY FIREWALL: Parent contexts and authenticated socket boundaries take absolute priority 
-        // over raw payload elements to prevent config-driven cross-tenant data leaks or privilege escalations.
         const orgId = parentContext?.organization_id || data.socket?.organization_id || data.organization_id;
         const host = parentContext?.host || data.socket?.host || data.host;
 
@@ -155,7 +216,7 @@ export async function executeApi(data, parentContext = null) {
             method: 'object.read',
             array: 'endpoints',
             organization_id: orgId,
-            host: host, // Carry host forward
+            host: host,
             $filter: {
                 query: { endpoint: data.endpoint, organization_id: orgId },
                 limit: 1
@@ -164,20 +225,18 @@ export async function executeApi(data, parentContext = null) {
         const endpointResponse = await crud.send(endpointQuery);
         const endpointConfig = endpointResponse?.object?.[0] || {};
 
-        // Fetch provider credentials with full environmental scope intact
         const rawApiConfig = await getApiConfig({ organization_id: orgId, host }, providerName);
         if (!rawApiConfig) {
             throw new Error(`Connection setting not registered for provider: '${providerName}'.`);
         }
         const apiConfig = normalizeConfig(rawApiConfig, providerName);
 
-        // Share parent context if executing within a nested macro frame
         const apiContext = parentContext || {
             data: data,
             event: {},
             actions: [],
             organization_id: orgId,
-            host: host, // Lock host context into AST evaluation loop
+            host: host,
             crud,
             wsManager,
             key: apiConfig.key,
@@ -188,15 +247,15 @@ export async function executeApi(data, parentContext = null) {
         if (actions) {
             if (Array.isArray(actions)) {
                 for (let i = 0; i < actions.length; i++) {
-                    const result = await processOperators(apiContext, actions[i]);
-                    apiContext.actions.push(result); // Saved flattened memory profile
+                    const result = await astAsync({ executeAST: actions[i], sandbox: createSandbox(apiContext) });
+                    apiContext.actions.push(result);
                 }
                 const finalMacroResult = apiContext.actions[apiContext.actions.length - 1];
                 if (finalMacroResult !== undefined) {
                     data[providerName] = finalMacroResult;
                 }
             } else {
-                const result = await processOperators(apiContext, actions);
+                const result = await astAsync({ executeAST: actions, sandbox: createSandbox(apiContext) });
                 apiContext.actions.push(result);
                 if (result !== undefined) {
                     data[providerName] = result;
@@ -224,13 +283,13 @@ export async function executeApi(data, parentContext = null) {
         }
 
         let headers = { ...(apiConfig.headers || {}), ...(endpointConfig.headers || {}) };
-        headers = await processOperators(apiContext, headers);
+        headers = await astAsync({ executeAST: headers, sandbox: createSandbox(apiContext) });
 
         const timeout = 15000;
         let options = { method: httpMethod, headers, timeout };
 
         if (!["GET", "HEAD"].includes(httpMethod) && data[providerName]) {
-            const bodyPayload = await processOperators(apiContext, data[providerName]);
+            const bodyPayload = await astAsync({ executeAST: data[providerName], sandbox: createSandbox(apiContext) });
             
             if (typeof bodyPayload === 'object' && bodyPayload !== null) {
                 options.body = JSON.stringify(bodyPayload);
@@ -283,7 +342,7 @@ export async function request(req, res) {
             method: 'object.read',
             array: 'webhooks',
             organization_id: organization._id,
-            host: hostname, // Maintain active host environment
+            host: hostname,
             $filter: {
                 query: { 
                     path: webhookPath, 
@@ -325,7 +384,7 @@ export async function request(req, res) {
             request: req,
             response: res,
             rawBody: rawBody,
-            host: hostname, // Propagate verified edge hostname
+            host: hostname,
             organization: organization,
             organization_id: organization._id,
             crud: crud,
@@ -337,7 +396,7 @@ export async function request(req, res) {
         if (webhookConfig.authenticate) {
             const auth = webhookConfig.authenticate;
             if (auth.method === "webhooks.constructEvent" && Array.isArray(auth.parameters)) {
-                const resolvedParams = await processOperators(context, [...auth.parameters]);
+                const resolvedParams = await astAsync({ executeAST: [...auth.parameters], sandbox: createSandbox(context) });
                 const payload = resolvedParams[0];
                 const signature = resolvedParams[1];
                 const secret = resolvedParams[2];
@@ -354,7 +413,7 @@ export async function request(req, res) {
 
         if (actionConfig) {
             if (typeof actionConfig === 'string') {
-                const actionName = await processOperators(context, actionConfig);
+                const actionName = await astAsync({ executeAST: actionConfig, sandbox: createSandbox(context) });
                 if (actionName && webhookConfig.actions?.[actionName]) {
                     executeOperations = webhookConfig.actions[actionName];
                 }
@@ -366,16 +425,15 @@ export async function request(req, res) {
         if (executeOperations) {
             if (Array.isArray(executeOperations)) {
                 for (let i = 0; i < executeOperations.length; i++) {
-                    const stepResult = await processOperators(context, executeOperations[i]);
+                    const stepResult = await astAsync({ executeAST: executeOperations[i], sandbox: createSandbox(context) });
                     context.actions.push(stepResult);
                 }
             } else if (typeof executeOperations === 'object' && executeOperations !== null) {
-                const stepResult = await processOperators(context, [executeOperations]);
+                const stepResult = await astAsync({ executeAST: [executeOperations], sandbox: createSandbox(context) });
                 context.actions.push(stepResult);
             }
         }
 
-        // Native Stream Inspection: Fall back to default 200 OK only if actions did not write or end the stream
         if (res && !res.writableEnded) {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ 
@@ -389,163 +447,6 @@ export async function request(req, res) {
             res.end(JSON.stringify({ error: "Invalid webhook request format", message: error.message }));
         }
     }
-}
-
-export async function processOperators(context, execute) {
-    if (Array.isArray(execute)) {
-        let evaluatedArray = [];
-        for (let index = 0; index < execute.length; index++) {
-            evaluatedArray[index] = await processOperators(context, execute[index]);
-        }
-        return evaluatedArray;
-    } else if (typeof execute === "object" && execute !== null) {
-        const keys = Object.keys(execute);
-        const operatorKey = keys.find(k => k.startsWith("$") && !["$storage", "$database", "$array", "$filter"].includes(k));
-        
-        if (operatorKey && keys.length === 1) {
-            return await processOperator(context, operatorKey, execute[operatorKey]);
-        }
-
-        let evaluatedObject = {};
-        for (let key of keys) {
-            let finalKey = key;
-
-            if (key.startsWith("$") && !["$storage", "$database", "$array", "$filter"].includes(key)) {
-                let resolvedKey = await processOperator(context, key);
-                if (typeof resolvedKey === "string" || typeof resolvedKey === "number") {
-                    finalKey = String(resolvedKey);
-                }
-            }
-
-            let finalValue = execute[key];
-            if (typeof finalValue === "string" && finalValue.startsWith("$") && !["$storage", "$database", "$array", "$filter"].includes(finalValue)) {
-                finalValue = await processOperator(context, finalValue);
-            } else if (Array.isArray(finalValue) || (typeof finalValue === "object" && finalValue !== null)) {
-                finalValue = await processOperators(context, finalValue);
-            }
-
-            evaluatedObject[finalKey] = finalValue;
-        }
-        
-        return evaluatedObject;
-    } else if (typeof execute === "string" && execute.startsWith("$") && !["$storage", "$database", "$array", "$filter"].includes(execute)) {
-        return await processOperator(context, execute);
-    }
-
-    return execute;
-}
-
-export async function processOperator(context, operator, args) {
-    if (args === undefined) {
-        if (operator.startsWith("$data.")) {
-            return getValueFromObject(context.data, operator.substring(6));
-        } else if (operator === "$data") {
-            return context.data;
-        } else if (operator.startsWith("$event.")) {
-            const result = getValueFromObject(context.event, operator.substring(7));
-            return await processOperators(context, result);
-        } else if (operator === "$event") {
-            return await processOperators(context, context.event);
-        } else if (operator.startsWith("$actions.")) {
-            return getValueFromObject(context.actions, operator.substring(9));
-        } else if (operator === "$actions") {
-            return context.actions;
-        } else if (operator.startsWith("$request.")) {
-            return getValueFromObject(context.request, operator.substring(9));
-        } else if (operator === "$request") {
-            return context.request;
-        } else if (operator.startsWith("$header.")) {
-            const headerKey = operator.substring(8).toLowerCase();
-            return context.request?.headers?.[headerKey];
-        } else if (operator === "$rawBody") {
-            return context.rawBody;
-        }
-    }
-
-    if (operator === "$jwt") {
-        const evaluatedContext = args !== undefined ? await processOperators(context, args) : {};
-        const privateKey = evaluatedContext.privateKey;
-        if (!privateKey) throw new Error("Missing cryptographic signing key inside $jwt context parameters");
-        return generateJWT(evaluatedContext, privateKey);
-    }
-
-    const cleanPath = operator.startsWith("$") ? operator.substring(1) : operator;
-    const parts = cleanPath.split('.');
-    
-    const Sandbox = {
-        ...NativeSandbox,
-        crud: context.crud,
-        socket: context.wsManager,
-        wsManager: context.wsManager,
-        request: context.request,
-        response: context.response,
-        key: context.key,
-        config: context.config,
-        organization_id: context.organization_id,
-        host: context.host, // Seal active host into AST sandbox environment
-        api: {
-            send: async (apiData) => {
-                return await executeApi(apiData, context);
-            }
-        }
-    };
-
-    let target = Sandbox[parts[0]];
-    let parentContext = Sandbox;
-
-    if (target !== undefined) {
-        for (let i = 1; i < parts.length; i++) {
-            parentContext = target;
-            target = target[parts[i]];
-            if (target === undefined) break;
-        }
-
-        if (typeof target === 'function') {
-            let argsArray = [];
-            if (args !== undefined) {
-                // Check if the argument is explicitly formatted using our human-friendly parameter operators
-                if (typeof args === 'object' && args !== null && (args.$args !== undefined || args.$arguments !== undefined)) {
-                    const explicitArgs = args.$args !== undefined ? args.$args : args.$arguments;
-                    
-                    if (Array.isArray(explicitArgs)) {
-                        // Multi-parameter routing: Evaluate each index independently
-                        argsArray = [];
-                        for (let i = 0; i < explicitArgs.length; i++) {
-                            argsArray.push(await processOperators(context, explicitArgs[i]));
-                        }
-                    } else {
-                        // Single-parameter fallback: Spelled out explicitly but contains a single expression
-                        const evaluatedSingle = await processOperators(context, explicitArgs);
-                        argsArray = [evaluatedSingle];
-                    }
-                } else {
-                    // Standard / Implicit routing: Treat the entire value as a single, isolated argument (arrays behave like arrays!)
-                    const evaluatedSingle = await processOperators(context, args);
-                    argsArray = [evaluatedSingle];
-                }
-            }
-            
-            // SECURITY FIREWALL: Forcefully overwrite parameters for local system calls 
-            // to align with the sealed context of the authenticated user.
-            if (parentContext === context.crud || parentContext === context.wsManager) {
-                if (argsArray.length === 0) {
-                    argsArray.push({
-                        organization_id: context.organization_id,
-                        host: context.host
-                    });
-                } else if (argsArray.length > 0 && typeof argsArray[0] === 'object' && argsArray[0] !== null) {
-                    argsArray[0].organization_id = context.organization_id;
-                    argsArray[0].host = context.host; // Lock environment isolation parameters down
-                }
-            }
-
-            return await target.apply(parentContext, argsArray);
-        } else if (target !== undefined) {
-            return target;
-        }
-    }
-
-    return operator;
 }
 
 export function generateJWT(config, secret) {
@@ -569,10 +470,6 @@ export function generateJWT(config, secret) {
     }
 }
 
-/**
- * Robustly verifies HMAC signatures natively.
- * FIXES CRITICAL TIMINGSAFEEQUAL ERROR: Enforces equal buffer lengths to prevent process crashes.
- */
 export function verifySignature(payload, signature, secret, algorithm = 'sha256') {
     try {
         if (!payload || !signature || !secret) return false;
@@ -580,17 +477,13 @@ export function verifySignature(payload, signature, secret, algorithm = 'sha256'
         const hmac = crypto.createHmac(algorithm, secret);
         hmac.update(payload);
         
-        // 1. Uniformly resolve inputs to identical encoding formats (e.g., Hex vs Base64 vs Raw buffers)
         const expectedSignature = hmac.digest();
         let receivedSignature = Buffer.isBuffer(signature) ? signature : Buffer.from(signature, 'hex');
 
-        // Fallback: Stripe/Providers can output base64 signatures; handle gracefully
         if (receivedSignature.length !== expectedSignature.length) {
             receivedSignature = Buffer.from(signature, 'base64');
         }
 
-        // 2. CRITICAL SECURITY GUARD: Enforce equal length check before passing to timingSafeEqual.
-        // Node's timingSafeEqual WILL throw an unhandled TypeError (crashing the worker) if byte sizes mismatch.
         if (receivedSignature.length !== expectedSignature.length) {
             console.warn('[@cocreate/api] Signature verification rejected immediately due to byte-length mismatch.');
             return false;
@@ -642,7 +535,7 @@ export async function getApiConfig(data, name) {
     let host = data.host;
     
     if (!orgId) {
-        const organization = await crud.getOrganization(data); // uses host inside data to lookup org
+        const organization = await crud.getOrganization(data);
         if (organization.error) throw new Error(organization.error);
         orgId = organization._id;
     }
@@ -651,7 +544,7 @@ export async function getApiConfig(data, name) {
         method: 'object.read',
         array: 'apis',
         organization_id: orgId,
-        host: host, // Keep environment host isolation contact
+        host: host,
         $filter: {
             query: { name: name, organization_id: orgId },
             limit: 1
