@@ -21,9 +21,8 @@
 // you must obtain a commercial license from CoCreate LLC.
 // For details, visit <https://cocreate.app/licenses/> or contact us at sales@cocreate.app.
 
-import crypto from 'node:crypto';
 import { URL } from 'node:url';
-import { getValueFromObject, objectToSearchParams, astAsync } from '@cocreate/utils';
+import { getValueFromObject, objectToSearchParams, astAsync, generateJWT, verifySignature, buildAuthHeaders } from '@cocreate/utils';
 
 // Core module references bound dynamically upon initialization
 let server = null;
@@ -162,9 +161,9 @@ function createSandbox(context) {
             }
         },
         jwt: (args) => {
-            const privateKey = args?.privateKey;
+            const privateKey = args?.privateKey || args?.secret;
             if (!privateKey) throw new Error("Missing cryptographic signing key inside $jwt context parameters");
-            return generateJWT(args, privateKey);
+            return generateJWT(args, privateKey, args.alg || 'HS256');
         }
     };
 
@@ -449,52 +448,8 @@ export async function request(req, res) {
     }
 }
 
-export function generateJWT(config, secret) {
-    try {
-        const header = config.header || { alg: 'HS256', typ: 'JWT' };
-        const payload = config.payload || {};
-        
-        const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url');
-        const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
-        
-        const signatureInput = `${encodedHeader}.${encodedPayload}`;
-        
-        const hmac = crypto.createHmac('sha256', secret);
-        hmac.update(signatureInput);
-        const signature = hmac.digest('base64url');
-        
-        return `${signatureInput}.${signature}`;
-    } catch (err) {
-        console.error('[@cocreate/api] Failed to generate JWT:', err);
-        throw err;
-    }
-}
-
-export function verifySignature(payload, signature, secret, algorithm = 'sha256') {
-    try {
-        if (!payload || !signature || !secret) return false;
-
-        const hmac = crypto.createHmac(algorithm, secret);
-        hmac.update(payload);
-        
-        const expectedSignature = hmac.digest();
-        let receivedSignature = Buffer.isBuffer(signature) ? signature : Buffer.from(signature, 'hex');
-
-        if (receivedSignature.length !== expectedSignature.length) {
-            receivedSignature = Buffer.from(signature, 'base64');
-        }
-
-        if (receivedSignature.length !== expectedSignature.length) {
-            console.warn('[@cocreate/api] Signature verification rejected immediately due to byte-length mismatch.');
-            return false;
-        }
-        
-        return crypto.timingSafeEqual(expectedSignature, receivedSignature);
-    } catch (err) {
-        console.error('[@cocreate/api] Failed signature verification:', err.message);
-        return false;
-    }
-}
+// Unified re-exports from security helper module to prevent duplicate function definitions
+export { generateJWT, verifySignature, buildAuthHeaders };
 
 export async function makeHttpRequest(url, options) {
     let controller, timeoutId;
