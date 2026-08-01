@@ -1,5 +1,5 @@
 /********************************************************************************
- * Copyright (C) 2023 CoCreate and Contributors.
+ * Copyright (C) 2023-2026 CoCreate and Contributors.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -13,16 +13,10 @@
  *
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
- *
  ********************************************************************************/
 
-// Commercial Licensing Information:
-// For commercial use of this software without the copyleft provisions of the AGPLv3,
-// you must obtain a commercial license from CoCreate LLC.
-// For details, visit <https://cocreate.app/licenses/> or contact us at sales@cocreate.app.
-
 import { URL } from 'node:url';
-import { getValueFromObject, objectToSearchParams, astAsync, generateJWT, verifySignature, buildAuthHeaders } from '@cocreate/utils';
+import { getValueFromObject, objectToSearchParams, astAsync, security } from '@cocreate/utils';
 
 // Core module references bound dynamically upon initialization
 let server = null;
@@ -33,13 +27,17 @@ const API = {
     init,
     executeApi,
     request,
-    generateJWT,
-    verifySignature,
+    security,
     makeHttpRequest,
     getApiConfig,
     normalizeConfig
 };
 
+/**
+ * Binds server core services and registers WebSocket event handlers.
+ * @param {Object} Server - Server core instance containing wsManager and crud
+ * @returns {Object} Exported API service interface
+ */
 export async function init(Server) {
     server = Server;
     wsManager = server.wsManager;
@@ -56,6 +54,12 @@ export async function init(Server) {
     return API;
 }
 
+/**
+ * Normalizes raw API configuration structures into a uniform key/url/headers shape.
+ * @param {string|Object} apiConfig - Raw configuration object or API key string
+ * @param {string} name - Provider identifier
+ * @returns {Object} Standardized configuration container
+ */
 export function normalizeConfig(apiConfig, name) {
     let key = null;
     let url = null;
@@ -85,11 +89,12 @@ export function normalizeConfig(apiConfig, name) {
 }
 
 /**
- * Builds a secure sandboxed execution context for evaluateAST.
- * Inherits native globals from AST parser automatically, only injecting runtime-specific scopes.
+ * Constructs an isolated execution sandbox enforcing multi-tenant isolation via Proxy firewalls.
+ * @param {Object} context - Execution context containing organization, host, data, and request info
+ * @returns {Object} Secure sandbox context for AST execution
  */
 function createSandbox(context) {
-    // SECURITY FIREWALL: Automatically proxy local system database calls to seal tenant-isolated metadata.
+    // SECURITY FIREWALL: Proxy database calls to enforce multi-tenant isolation.
     const secureCrud = context.crud ? new Proxy(context.crud, {
         get(target, prop) {
             const original = target[prop];
@@ -111,6 +116,7 @@ function createSandbox(context) {
         }
     }) : undefined;
 
+    // SECURITY FIREWALL: Proxy WebSocket manager calls for multi-tenant isolation.
     const secureWsManager = context.wsManager ? new Proxy(context.wsManager, {
         get(target, prop) {
             const original = target[prop];
@@ -148,6 +154,9 @@ function createSandbox(context) {
         socket: secureWsManager,
         wsManager: secureWsManager,
 
+        // Security Utility Instance
+        security,
+
         // Host Context Identifiers
         key: context.key,
         config: context.config,
@@ -159,11 +168,6 @@ function createSandbox(context) {
             send: async (apiData) => {
                 return await executeApi(apiData, context);
             }
-        },
-        jwt: (args) => {
-            const privateKey = args?.privateKey || args?.secret;
-            if (!privateKey) throw new Error("Missing cryptographic signing key inside $jwt context parameters");
-            return generateJWT(args, privateKey, args.alg || 'HS256');
         }
     };
 
@@ -175,6 +179,12 @@ function createSandbox(context) {
     return sandbox;
 }
 
+/**
+ * Resolves endpoint definitions, executes AST macros, or dispatches HTTP requests.
+ * @param {Object} data - API execution payload containing directives
+ * @param {Object} [parentContext=null] - Optional outer sandbox execution context
+ * @returns {Promise<any>} Execution response payload
+ */
 export async function executeApi(data, parentContext = null) {
     try {
         const orgId = parentContext?.organization_id || data.socket?.organization_id || data.organization_id;
@@ -267,7 +277,6 @@ export async function executeApi(data, parentContext = null) {
             return;
         }
 
-        // --- Standard Outbound Construction Path ---
         if (!apiConfig.url) {
             throw new Error(`Configuration missing 'url' base for provider '${providerName}'.`);
         }
@@ -322,6 +331,11 @@ export async function executeApi(data, parentContext = null) {
     }
 }
 
+/**
+ * Processes incoming HTTP webhook requests, validates security signatures, and executes pipelines.
+ * @param {Object} req - HTTP request object
+ * @param {Object} res - HTTP response object
+ */
 export async function request(req, res) {
     try {
         const urlObject = new URL(`http://${req.headers.host}${req.url}`);
@@ -400,7 +414,10 @@ export async function request(req, res) {
                 const signature = resolvedParams[1];
                 const secret = resolvedParams[2];
 
-                if (!verifySignature(payload, signature, secret, "sha256")) {
+                const computedSignature = security.createWebhookSignature(payload, secret, { format: 'github' });
+                const expectedSignature = String(signature);
+
+                if (!security.timingSafeEqual(computedSignature, expectedSignature)) {
                     res.writeHead(401, { "Content-Type": "application/json" });
                     return res.end(JSON.stringify({ error: "Unauthorized access: signature verification failed." }));
                 }
@@ -448,9 +465,15 @@ export async function request(req, res) {
     }
 }
 
-// Unified re-exports from security helper module to prevent duplicate function definitions
-export { generateJWT, verifySignature, buildAuthHeaders };
+// Re-export security library instance
+export { security };
 
+/**
+ * Low-level HTTP dispatch utility wrapping global fetch with AbortController timeout handling.
+ * @param {string} url - Target URL endpoint
+ * @param {Object} options - Fetch options (method, headers, body, signal, timeout)
+ * @returns {Promise<Response>} Native fetch response instance
+ */
 export async function makeHttpRequest(url, options) {
     let controller, timeoutId;
     if (global.AbortController) {
@@ -485,6 +508,12 @@ export async function makeHttpRequest(url, options) {
     }
 }
 
+/**
+ * Queries database storage for provider connection credentials and API configuration.
+ * @param {Object} data - Context query parameters (organization_id, host)
+ * @param {string} name - API provider name
+ * @returns {Promise<Object>} API provider configuration object
+ */
 export async function getApiConfig(data, name) {
     let orgId = data.organization_id;
     let host = data.host;
