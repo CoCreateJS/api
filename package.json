@@ -1,6 +1,6 @@
 {
   "name": "@cocreate/api",
-  "version": "1.30.0",
+  "version": "1.31.0",
   "description": "A secure, multi-tenant API execution gateway and proxy layer that dynamically resolves endpoint actions, processes AST micro-operators, handles webhooks, and manages third-party integrations with strict tenant environment isolation.",
   "keywords": [
     "api-orchestration",
