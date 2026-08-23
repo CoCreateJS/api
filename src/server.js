@@ -147,6 +147,8 @@ function createSandbox(context) {
         event: context.event,
         actions: context.actions,
         request: context.request,
+        response: context.response,
+        header: context.request?.headers || context.header || {},
         rawBody: context.rawBody,
 
         // Safe Proxied System Objects
