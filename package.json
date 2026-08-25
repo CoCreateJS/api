@@ -52,14 +52,14 @@
   },
   "dependencies": {
     "@cocreate/actions": "^1.24.0",
-    "@cocreate/crud-client": "^1.36.1",
+    "@cocreate/crud-client": "^1.37.0",
     "@cocreate/element-prototype": "^1.35.0",
-    "@cocreate/render": "^1.50.0",
-    "@cocreate/socket-client": "^1.42.1",
-    "@cocreate/utils": "^1.52.0"
+    "@cocreate/render": "^1.51.0",
+    "@cocreate/socket-client": "^1.43.0",
+    "@cocreate/utils": "^1.54.0"
   },
   "devDependencies": {
-    "@cocreate/webpack": "^1.8.0"
+    "@cocreate/webpack": "^1.9.0"
   },
   "allowScripts": {
     "@cocreate/actions@1.21.4": true,
