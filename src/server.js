@@ -15,134 +15,95 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  ********************************************************************************/
 
-import { URL } from 'node:url';
-import { getValueFromObject, objectToSearchParams, astAsync, security } from '@cocreate/utils';
+/**
+ * @file Core API Handler module for dynamic multi-tenant integrations, webhook routing, and AST macro pipeline execution.
+ * @module @cocreate/api-handler
+ */
 
-// Core module references bound dynamically upon initialization
+import { URL } from 'node:url';
+import { objectToSearchParams, astAsync, security } from '@cocreate/utils';
+
 let server = null;
 let wsManager = null;
 let crud = null;
 
 const API = {
-    init,
-    executeApi,
-    request,
-    security,
-    makeHttpRequest,
-    getApiConfig,
-    normalizeConfig
+    send,
+    getApiConfig
 };
 
 /**
- * Binds server core services and registers WebSocket event handlers.
- * @param {Object} Server - Server core instance containing wsManager and crud
- * @returns {Object} Exported API service interface
+ * Binds server core services and registers WebSocket event handlers for API dispatch.
+ *
+ * @async
+ * @param {Object} Server - Core server instance containing wsManager and crud instances.
+ * @param {Object} Server.wsManager - WebSocket event emitter manager.
+ * @param {Object} Server.crud - Database CRUD service operator.
+ * @returns {Promise<Object>} Exported operational API interface object (`{ send, getApiConfig }`).
  */
 export async function init(Server) {
     server = Server;
     wsManager = server.wsManager;
     crud = server.crud;
 
-    wsManager.on("api", (data) => {
-        executeApi(data);
-    });
-
-    wsManager.on("endpoint", (data) => {
-        executeApi(data);
-    });
+    wsManager.on("api", send);
 
     return API;
 }
 
 /**
- * Normalizes raw API configuration structures into a uniform key/url/headers shape.
- * @param {string|Object} apiConfig - Raw configuration object or API key string
- * @param {string} name - Provider identifier
- * @returns {Object} Standardized configuration container
+ * Creates a Proxy firewall wrapper to automatically inject multi-tenant scope parameters (`organization_id` and `host`) into target method invocations.
+ *
+ * @param {Object} target - Target service instance to proxy (e.g., crud or wsManager).
+ * @param {string} orgId - Multi-tenant organization identifier.
+ * @param {string} host - Host domain identifier.
+ * @returns {Proxy|undefined} Proxied target service with auto-injected tenant parameters, or undefined if target is falsy.
  */
-export function normalizeConfig(apiConfig, name) {
-    let key = null;
-    let url = null;
-    let headers = {};
-
-    if (typeof apiConfig === 'string') {
-        key = apiConfig;
-    } else if (apiConfig && typeof apiConfig === 'object') {
-        url = apiConfig.url;
-        headers = apiConfig.headers || {};
-
-        if (apiConfig.key) {
-            if (typeof apiConfig.key === 'string') {
-                key = apiConfig.key;
-            } else if (typeof apiConfig.key === 'object') {
-                key = apiConfig.key.apiKey || apiConfig.key.key || JSON.stringify(apiConfig.key);
+function createTenantProxy(target, orgId, host) {
+    if (!target) return undefined;
+    return new Proxy(target, {
+        get(targetObj, prop) {
+            const original = targetObj[prop];
+            if (typeof original === 'function') {
+                return function (...args) {
+                    if (args.length === 0) {
+                        args.push({ organization_id: orgId, host });
+                    } else if (typeof args[0] === 'object' && args[0] !== null) {
+                        args[0].organization_id = orgId;
+                        args[0].host = host;
+                    }
+                    return original.apply(targetObj, args);
+                };
             }
-        } else if (apiConfig.apiKey) {
-            key = apiConfig.apiKey;
+            return original;
         }
-
-        if (apiConfig.url) url = apiConfig.url;
-        if (apiConfig.headers) headers = { ...headers, ...apiConfig.headers };
-    }
-
-    return { key, url, headers };
+    });
 }
 
 /**
- * Constructs an isolated execution sandbox enforcing multi-tenant isolation via Proxy firewalls.
- * @param {Object} context - Execution context containing organization, host, data, and request info
- * @returns {Object} Secure sandbox context for AST execution
+ * Constructs an isolated execution sandbox enforcing multi-tenant isolation via proxy firewalls for AST operations.
+ *
+ * @param {Object} context - Raw execution context.
+ * @param {Object} [context.data] - Execution payload data object.
+ * @param {Object} [context.event] - Webhook or inbound trigger event data.
+ * @param {Array<any>} [context.actions] - Collected AST macro execution results.
+ * @param {Object} [context.request] - Incoming HTTP request object.
+ * @param {Object} [context.response] - Outgoing HTTP response object.
+ * @param {string} [context.rawBody] - Unparsed HTTP request string payload.
+ * @param {Object} [context.crud] - Database service interface instance.
+ * @param {Object} [context.wsManager] - WebSocket manager instance.
+ * @param {string} [context.key] - Provider key/credential string.
+ * @param {Object} [context.config] - Full provider API configuration object.
+ * @param {string} context.organization_id - Target multi-tenant organization ID.
+ * @param {string} context.host - Target host domain.
+ * @returns {Object} Secure AST execution sandbox object containing firewalled utilities.
  */
 function createSandbox(context) {
-    // SECURITY FIREWALL: Proxy database calls to enforce multi-tenant isolation.
-    const secureCrud = context.crud ? new Proxy(context.crud, {
-        get(target, prop) {
-            const original = target[prop];
-            if (typeof original === 'function') {
-                return function(...args) {
-                    if (args.length === 0) {
-                        args.push({
-                            organization_id: context.organization_id,
-                            host: context.host
-                        });
-                    } else if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null) {
-                        args[0].organization_id = context.organization_id;
-                        args[0].host = context.host;
-                    }
-                    return original.apply(target, args);
-                };
-            }
-            return original;
-        }
-    }) : undefined;
-
-    // SECURITY FIREWALL: Proxy WebSocket manager calls for multi-tenant isolation.
-    const secureWsManager = context.wsManager ? new Proxy(context.wsManager, {
-        get(target, prop) {
-            const original = target[prop];
-            if (typeof original === 'function') {
-                return function(...args) {
-                    if (args.length === 0) {
-                        args.push({
-                            organization_id: context.organization_id,
-                            host: context.host
-                        });
-                    } else if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null) {
-                        args[0].organization_id = context.organization_id;
-                        args[0].host = context.host;
-                    }
-                    return original.apply(target, args);
-                };
-            }
-            return original;
-        }
-    }) : undefined;
-
-    // Only expose full server instance to platform admin organization
-    const isPlatformOrg = server && server.organization_id && (context.organization_id === server.organization_id);
+    const isPlatformOrg = server?.organization_id && (context.organization_id === server.organization_id);
+    const secureCrud = createTenantProxy(context.crud, context.organization_id, context.host);
+    const secureWs = createTenantProxy(context.wsManager, context.organization_id, context.host);
 
     const sandbox = {
-        // Core Isolated Dynamic AST Scopes
         data: context.data,
         event: context.event,
         actions: context.actions,
@@ -151,29 +112,21 @@ function createSandbox(context) {
         header: context.request?.headers || context.header || {},
         rawBody: context.rawBody,
 
-        // Safe Proxied System Objects
         crud: secureCrud,
-        socket: secureWsManager,
-        wsManager: secureWsManager,
-
-        // Security Utility Instance
+        socket: secureWs,
+        wsManager: secureWs,
         security,
 
-        // Host Context Identifiers
         key: context.key,
         config: context.config,
         organization_id: context.organization_id,
         host: context.host,
 
-        // Custom operators rewritten as sandbox properties
         api: {
-            send: async (apiData) => {
-                return await executeApi(apiData, context);
-            }
+            send: (apiData) => send(apiData, context)
         }
     };
 
-    // Safely inject elevated server core only when authenticated context is root platform
     if (isPlatformOrg) {
         sandbox.server = server;
     }
@@ -182,23 +135,34 @@ function createSandbox(context) {
 }
 
 /**
- * Resolves endpoint definitions, executes AST macros, or dispatches HTTP requests.
- * @param {Object} data - API execution payload containing directives
- * @param {Object} [parentContext=null] - Optional outer sandbox execution context
- * @returns {Promise<any>} Execution response payload
+ * Resolves endpoint definitions, executes AST macro actions, or dispatches outgoing HTTP requests.
+ *
+ * @async
+ * @param {Object} data - Execution directive payload.
+ * @param {string} [data.url] - Optional pre-formatted target HTTP endpoint URL (Direct Execution Path).
+ * @param {string} [data.method] - Provider or HTTP method directive (e.g., 'stripe' or 'GET').
+ * @param {string} [data.endpoint] - API endpoint action directive (e.g., 'POST /customers').
+ * @param {Object} [data.headers] - Custom HTTP header directives.
+ * @param {number} [data.timeout=15000] - Request timeout in milliseconds.
+ * @param {Object|string} [data.body] - Inbound request body payload.
+ * @param {Object} [data.socket] - WebSocket client reference for real-time response emit.
+ * @param {string} [data.organization_id] - Multi-tenant organization identifier.
+ * @param {string} [data.host] - Target host domain.
+ * @param {Object|null} [parentContext=null] - Outer sandbox execution context when nested.
+ * @returns {Promise<any>} Response payload from executed AST macros or HTTP request.
+ * @throws {Error} If required directives are missing, provider configuration is invalid, or HTTP dispatch fails.
  */
-export async function executeApi(data, parentContext = null) {
+export async function send(data, parentContext = null) {
     try {
         const orgId = parentContext?.organization_id || data.socket?.organization_id || data.organization_id;
         const host = parentContext?.host || data.socket?.host || data.host;
 
         // PATH A: Native Execution of a Pre-prepared HTTP Request Object
         if (data.url && data.method) {
-            const timeout = data.timeout || 15000;
             const options = {
                 method: data.method.toUpperCase(),
                 headers: data.headers || {},
-                timeout
+                timeout: data.timeout || 15000
             };
 
             if (data.body) {
@@ -223,54 +187,45 @@ export async function executeApi(data, parentContext = null) {
         const providerName = data.method.split(/[./]/)[0];
         const httpMethod = data.endpoint.split(" ")[0].toUpperCase();
 
+        const apiConfig = await getApiConfig({ organization_id: orgId, host }, providerName);
+
         const endpointQuery = {
             method: 'object.read',
             array: 'endpoints',
             organization_id: orgId,
-            host: host,
+            host,
             $filter: {
-                query: { endpoint: data.endpoint, organization_id: orgId },
+                query: { api_id: apiConfig._id, endpoint: data.endpoint },
                 limit: 1
             }
         };
+
         const endpointResponse = await crud.send(endpointQuery);
         const endpointConfig = endpointResponse?.object?.[0] || {};
 
-        const rawApiConfig = await getApiConfig({ organization_id: orgId, host }, providerName);
-        if (!rawApiConfig) {
-            throw new Error(`Connection setting not registered for provider: '${providerName}'.`);
-        }
-        const apiConfig = normalizeConfig(rawApiConfig, providerName);
-
         const apiContext = parentContext || {
-            data: data,
+            data,
             event: {},
             actions: [],
             organization_id: orgId,
-            host: host,
+            host,
             crud,
             wsManager,
             key: apiConfig.key,
             config: apiConfig
         };
 
-        const actions = endpointConfig.actions || endpointConfig.action;
-        if (actions) {
-            if (Array.isArray(actions)) {
-                for (let i = 0; i < actions.length; i++) {
-                    const result = await astAsync({ executeAST: actions[i], sandbox: createSandbox(apiContext) });
-                    apiContext.actions.push(result);
-                }
-                const finalMacroResult = apiContext.actions[apiContext.actions.length - 1];
-                if (finalMacroResult !== undefined) {
-                    data[providerName] = finalMacroResult;
-                }
-            } else {
-                const result = await astAsync({ executeAST: actions, sandbox: createSandbox(apiContext) });
+        const rawActions = endpointConfig.actions || endpointConfig.action;
+        if (rawActions) {
+            const actionList = Array.isArray(rawActions) ? rawActions : [rawActions];
+            for (const actionItem of actionList) {
+                const result = await astAsync({ executeAST: actionItem, sandbox: createSandbox(apiContext) });
                 apiContext.actions.push(result);
-                if (result !== undefined) {
-                    data[providerName] = result;
-                }
+            }
+
+            const finalMacroResult = apiContext.actions[apiContext.actions.length - 1];
+            if (finalMacroResult !== undefined) {
+                data[providerName] = finalMacroResult;
             }
 
             if (data.socket && wsManager) {
@@ -287,7 +242,7 @@ export async function executeApi(data, parentContext = null) {
         let endpointPath = endpointConfig.path || data.endpoint.split(" ")[1];
         url += endpointPath.startsWith("/") ? endpointPath : `/${endpointPath}`;
 
-        if (data[providerName] && data[providerName].$searchParams) {
+        if (data[providerName]?.$searchParams) {
             url += objectToSearchParams(data[providerName].$searchParams);
             delete data[providerName].$searchParams;
         }
@@ -295,15 +250,14 @@ export async function executeApi(data, parentContext = null) {
         let headers = { ...(apiConfig.headers || {}), ...(endpointConfig.headers || {}) };
         headers = await astAsync({ executeAST: headers, sandbox: createSandbox(apiContext) });
 
-        const timeout = 15000;
-        let options = { method: httpMethod, headers, timeout };
+        const options = { method: httpMethod, headers, timeout: 15000 };
 
         if (!["GET", "HEAD"].includes(httpMethod) && data[providerName]) {
             const bodyPayload = await astAsync({ executeAST: data[providerName], sandbox: createSandbox(apiContext) });
-            
+
             if (typeof bodyPayload === 'object' && bodyPayload !== null) {
                 options.body = JSON.stringify(bodyPayload);
-                if (!headers["Content-Type"]) {
+                if (!options.headers["Content-Type"]) {
                     options.headers["Content-Type"] = "application/json; charset=utf-8";
                 }
             } else {
@@ -320,7 +274,11 @@ export async function executeApi(data, parentContext = null) {
         }
         return responsePayload;
     } catch (error) {
-        data.error = error.message;
+        if (!Array.isArray(data.error)) {
+            data.error = data.error ? [data.error] : [];
+        }
+        data.error.push(error.message);
+
         if (error.response) {
             data.status = error.response.status;
             data.statusText = error.response.statusText;
@@ -334,9 +292,12 @@ export async function executeApi(data, parentContext = null) {
 }
 
 /**
- * Processes incoming HTTP webhook requests, validates security signatures, and executes pipelines.
- * @param {Object} req - HTTP request object
- * @param {Object} res - HTTP response object
+ * Processes incoming HTTP webhook requests, verifies HMAC/JWT security signatures, and executes pipelines.
+ *
+ * @async
+ * @param {Object} req - Native Node.js HTTP incoming request stream.
+ * @param {Object} res - Native Node.js HTTP server response stream.
+ * @returns {Promise<void>}
  */
 export async function request(req, res) {
     try {
@@ -346,7 +307,7 @@ export async function request(req, res) {
         let organization;
         try {
             organization = await crud.getOrganization({ host: hostname });
-        } catch (error) {
+        } catch {
             res.writeHead(404, { "Content-Type": "application/json" });
             return res.end(JSON.stringify({ error: "Organization mapping not found" }));
         }
@@ -359,13 +320,11 @@ export async function request(req, res) {
             organization_id: organization._id,
             host: hostname,
             $filter: {
-                query: { 
-                    path: webhookPath, 
-                    organization_id: organization._id 
-                },
+                query: { path: webhookPath },
                 limit: 1
             }
         };
+
         const webhookResponse = await crud.send(webhookQuery);
         const webhookConfig = webhookResponse?.object?.[0];
 
@@ -380,8 +339,6 @@ export async function request(req, res) {
             req.on("end", resolve);
             req.on("error", reject);
         });
-
-        const queryParams = Object.fromEntries(urlObject.searchParams.entries());
 
         let parsedEvent = {};
         if (rawBody) {
@@ -398,31 +355,25 @@ export async function request(req, res) {
             actions: [],
             request: req,
             response: res,
-            rawBody: rawBody,
+            rawBody,
             host: hostname,
-            organization: organization,
+            organization,
             organization_id: organization._id,
-            crud: crud,
-            wsManager: wsManager
+            crud,
+            wsManager
         };
 
-        context.request.query = queryParams;
+        context.request.query = Object.fromEntries(urlObject.searchParams.entries());
 
-        if (webhookConfig.authenticate) {
-            const auth = webhookConfig.authenticate;
-            if (auth.method === "webhooks.constructEvent" && Array.isArray(auth.parameters)) {
-                const resolvedParams = await astAsync({ executeAST: [...auth.parameters], sandbox: createSandbox(context) });
-                const payload = resolvedParams[0];
-                const signature = resolvedParams[1];
-                const secret = resolvedParams[2];
+        if (webhookConfig.authenticate?.method === "webhooks.constructEvent" && Array.isArray(webhookConfig.authenticate.parameters)) {
+            const resolvedParams = await astAsync({ executeAST: [...webhookConfig.authenticate.parameters], sandbox: createSandbox(context) });
+            const [payload, signature, secret] = resolvedParams;
 
-                const computedSignature = security.createWebhookSignature(payload, secret, { format: 'github' });
-                const expectedSignature = String(signature);
+            const computedSignature = security.createWebhookSignature(payload, secret, { format: 'github' });
 
-                if (!security.timingSafeEqual(computedSignature, expectedSignature)) {
-                    res.writeHead(401, { "Content-Type": "application/json" });
-                    return res.end(JSON.stringify({ error: "Unauthorized access: signature verification failed." }));
-                }
+            if (!security.timingSafeEqual(computedSignature, String(signature))) {
+                res.writeHead(401, { "Content-Type": "application/json" });
+                return res.end(JSON.stringify({ error: "Unauthorized access: signature verification failed." }));
             }
         }
 
@@ -441,22 +392,18 @@ export async function request(req, res) {
         }
 
         if (executeOperations) {
-            if (Array.isArray(executeOperations)) {
-                for (let i = 0; i < executeOperations.length; i++) {
-                    const stepResult = await astAsync({ executeAST: executeOperations[i], sandbox: createSandbox(context) });
-                    context.actions.push(stepResult);
-                }
-            } else if (typeof executeOperations === 'object' && executeOperations !== null) {
-                const stepResult = await astAsync({ executeAST: [executeOperations], sandbox: createSandbox(context) });
+            const opsList = Array.isArray(executeOperations) ? executeOperations : [executeOperations];
+            for (const op of opsList) {
+                const stepResult = await astAsync({ executeAST: Array.isArray(op) ? op : [op], sandbox: createSandbox(context) });
                 context.actions.push(stepResult);
             }
         }
 
         if (res && !res.writableEnded) {
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ 
-                message: "Webhook processed successfully", 
-                payload: context.actions[context.actions.length - 1] || {} 
+            res.end(JSON.stringify({
+                message: "Webhook processed successfully",
+                payload: context.actions[context.actions.length - 1] || {}
             }));
         }
     } catch (error) {
@@ -467,31 +414,24 @@ export async function request(req, res) {
     }
 }
 
-// Re-export security library instance
-export { security };
-
 /**
- * Low-level HTTP dispatch utility wrapping global fetch with AbortController timeout handling.
- * @param {string} url - Target URL endpoint
- * @param {Object} options - Fetch options (method, headers, body, signal, timeout)
- * @returns {Promise<Response>} Native fetch response instance
+ * Low-level HTTP dispatch utility wrapping native `fetch` with AbortController timeout handling.
+ *
+ * @async
+ * @param {string} url - Absolute target URL endpoint.
+ * @param {Object} [options={}] - Fetch request options (method, headers, body, signal).
+ * @param {number} [options.timeout=15000] - Timeout threshold in milliseconds before aborting.
+ * @returns {Promise<Response>} Native fetch Response instance.
+ * @throws {Error} Throws HTTP error status or network timeout error.
  */
 export async function makeHttpRequest(url, options) {
-    let controller, timeoutId;
-    if (global.AbortController) {
-        controller = new global.AbortController();
-        timeoutId = setTimeout(() => controller.abort(), options.timeout || 15000);
-        options.signal = controller.signal;
-    }
-
-    const fetchFn = global.fetch;
-    if (typeof fetchFn !== "function") {
-        throw new Error("System runtime environment is missing a valid HTTP fetch implementation.");
-    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), options.timeout || 15000);
+    options.signal = controller.signal;
 
     try {
-        const response = await fetchFn(url, options);
-        if (timeoutId) clearTimeout(timeoutId);
+        const response = await fetch(url, options);
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const text = await response.text();
@@ -505,24 +445,28 @@ export async function makeHttpRequest(url, options) {
         }
         return response;
     } catch (error) {
-        if (timeoutId) clearTimeout(timeoutId);
+        clearTimeout(timeoutId);
         throw error;
     }
 }
 
 /**
- * Queries database storage for provider connection credentials and API configuration.
- * @param {Object} data - Context query parameters (organization_id, host)
- * @param {string} name - API provider name
- * @returns {Promise<Object>} API provider configuration object
+ * Queries database storage for provider connection credentials and API configuration settings.
+ *
+ * @async
+ * @param {Object} data - Context object containing search criteria.
+ * @param {string} [data.organization_id] - Target organization ID (resolves via hostname if absent).
+ * @param {string} [data.host] - Target host domain.
+ * @param {string} name - API provider identifier (e.g., 'stripe', 'openai', 'twilio').
+ * @returns {Promise<Object>} Standardized API configuration object containing key, url, and headers.
+ * @throws {Error} If organization mapping fails or integration settings do not exist.
  */
 export async function getApiConfig(data, name) {
-    let orgId = data.organization_id;
-    let host = data.host;
-    
+    let { organization_id: orgId, host } = data || {};
+
     if (!orgId) {
         const organization = await crud.getOrganization(data);
-        if (organization.error) throw new Error(organization.error);
+        if (organization?.error) throw new Error(organization.error);
         orgId = organization._id;
     }
 
@@ -530,18 +474,23 @@ export async function getApiConfig(data, name) {
         method: 'object.read',
         array: 'apis',
         organization_id: orgId,
-        host: host,
+        host,
         $filter: {
-            query: { name: name, organization_id: orgId },
+            query: { name },
             limit: 1
         }
     };
-    
+
     const response = await crud.send(query);
     const apiConfig = response?.object?.[0];
 
-    if (!apiConfig) throw new Error(`Integration settings are missing for provider: '${name}'`);
+    if (!apiConfig) {
+        throw new Error(`Integration settings are missing for provider: '${name}'`);
+    }
+
     return apiConfig;
 }
 
-export default API;
+export default {
+    init
+};
