@@ -29,6 +29,7 @@ let crud = null;
 
 const API = {
     send,
+    webhook,
     getApiConfig
 };
 
@@ -47,6 +48,7 @@ export async function init(Server) {
     crud = server.crud;
 
     wsManager.on("api", send);
+    wsManager.on("endpoint", send);
 
     return API;
 }
@@ -195,7 +197,7 @@ export async function send(data, parentContext = null) {
             organization_id: orgId,
             host,
             $filter: {
-                query: { api_id: apiConfig._id, endpoint: data.endpoint },
+                query: { api_id: apiConfig._id, endpoint: data.endpoint, enabled: true },
                 limit: 1
             }
         };
@@ -299,7 +301,7 @@ export async function send(data, parentContext = null) {
  * @param {Object} res - Native Node.js HTTP server response stream.
  * @returns {Promise<void>}
  */
-export async function request(req, res) {
+export async function webhook(req, res) {
     try {
         const urlObject = new URL(`http://${req.headers.host}${req.url}`);
         const hostname = urlObject.hostname;
@@ -320,7 +322,7 @@ export async function request(req, res) {
             organization_id: organization._id,
             host: hostname,
             $filter: {
-                query: { path: webhookPath },
+                query: { path: webhookPath, enabled: true },
                 limit: 1
             }
         };
@@ -476,7 +478,7 @@ export async function getApiConfig(data, name) {
         organization_id: orgId,
         host,
         $filter: {
-            query: { name },
+            query: { name, enabled: true },
             limit: 1
         }
     };
