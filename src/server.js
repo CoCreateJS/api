@@ -21,7 +21,12 @@
  */
 
 import { URL } from 'node:url';
-import { objectToSearchParams, astAsync, security } from '@cocreate/utils';
+import {
+    objectToSearchParams,
+    searchParamsToObject,
+    astAsync,
+    security
+} from '@cocreate/utils';
 
 let server = null;
 let wsManager = null;
@@ -48,7 +53,6 @@ export async function init(Server) {
     crud = server.crud;
 
     wsManager.on("api", send);
-    wsManager.on("endpoint", send);
 
     return API;
 }
@@ -86,12 +90,10 @@ function createTenantProxy(target, orgId, host) {
  * Constructs an isolated execution sandbox enforcing multi-tenant isolation via proxy firewalls for AST operations.
  *
  * @param {Object} context - Raw execution context.
- * @param {Object} [context.data] - Execution payload data object.
+ * @param {Object} [context.payload] - Execution payload data object.
  * @param {Object} [context.event] - Webhook or inbound trigger event data.
- * @param {Array<any>} [context.actions] - Collected AST macro execution results.
  * @param {Object} [context.request] - Incoming HTTP request object.
  * @param {Object} [context.response] - Outgoing HTTP response object.
- * @param {string} [context.rawBody] - Unparsed HTTP request string payload.
  * @param {Object} [context.crud] - Database service interface instance.
  * @param {Object} [context.wsManager] - WebSocket manager instance.
  * @param {string} [context.key] - Provider key/credential string.
@@ -106,13 +108,14 @@ function createSandbox(context) {
     const secureWs = createTenantProxy(context.wsManager, context.organization_id, context.host);
 
     const sandbox = {
-        data: context.data,
+        payload: context.payload,
         event: context.event,
-        actions: context.actions,
         request: context.request,
         response: context.response,
         header: context.request?.headers || context.header || {},
-        rawBody: context.rawBody,
+        searchParams: context.searchParams,
+        searchParamsToObject,
+        Buffer,
 
         crud: secureCrud,
         socket: secureWs,
@@ -142,16 +145,18 @@ function createSandbox(context) {
  * @async
  * @param {Object} data - Execution directive payload.
  * @param {string} [data.url] - Optional pre-formatted target HTTP endpoint URL (Direct Execution Path).
- * @param {string} [data.method] - Provider or HTTP method directive (e.g., 'stripe' or 'GET').
- * @param {string} [data.endpoint] - API endpoint action directive (e.g., 'POST /customers').
+ * @param {string} [data.api] - API configuration name (e.g., 'stripe-test').
+ * @param {string} [data.method] - HTTP method (e.g., 'post'). A matched endpoint configuration may override it.
+ * @param {string} [data.endpoint] - Stored endpoint name (e.g., 'create-customer') or direct API path (e.g., '/v1/customers').
+ * @param {*} [data.data] - Request content passed to the external API.
+ * @param {Object} [data.searchParams] - Query parameters appended to the request URL.
  * @param {Object} [data.headers] - Custom HTTP header directives.
  * @param {number} [data.timeout=15000] - Request timeout in milliseconds.
- * @param {Object|string} [data.body] - Inbound request body payload.
  * @param {Object} [data.socket] - WebSocket client reference for real-time response emit.
  * @param {string} [data.organization_id] - Multi-tenant organization identifier.
  * @param {string} [data.host] - Target host domain.
  * @param {Object|null} [parentContext=null] - Outer sandbox execution context when nested.
- * @returns {Promise<any>} Response payload from executed AST macros or HTTP request.
+ * @returns {Promise<Object>} The mutated execution envelope, with response content assigned to `data.data`.
  * @throws {Error} If required directives are missing, provider configuration is invalid, or HTTP dispatch fails.
  */
 export async function send(data, parentContext = null) {
@@ -159,122 +164,130 @@ export async function send(data, parentContext = null) {
         const orgId = parentContext?.organization_id || data.socket?.organization_id || data.organization_id;
         const host = parentContext?.host || data.socket?.host || data.host;
 
-        // PATH A: Native Execution of a Pre-prepared HTTP Request Object
-        if (data.url && data.method) {
-            const options = {
-                method: data.method.toUpperCase(),
-                headers: data.headers || {},
-                timeout: data.timeout || 15000
+        const apiName = data.api?.trim() || "";
+        const endpoint = data.endpoint?.trim() || "";
+        const payloadUrl = data.url?.trim() || "";
+        const apiConfig = apiName
+            ? await getApiConfig({ organization_id: orgId, host }, apiName)
+            : {};
+
+        if (!endpoint && !payloadUrl && !apiConfig.endpoint && !apiConfig.url) {
+            throw new Error("API execution request requires either 'endpoint' or 'url'.");
+        }
+
+        let endpointConfig = {};
+
+        // Every endpoint value can identify a reusable endpoint configuration.
+        // When no matching name exists, the value itself becomes the API path.
+        if (endpoint && apiConfig._id) {
+            const endpointFilter = {
+                api_id: apiConfig._id,
+                name: endpoint,
+                enabled: true
+            };
+            if (data.method?.trim()) {
+                endpointFilter.method = data.method.trim().toLowerCase();
+            }
+
+            const endpointQuery = {
+                method: 'object.read',
+                array: 'endpoints',
+                organization_id: orgId,
+                host,
+                $filter: {
+                    query: endpointFilter,
+                    limit: 1
+                }
             };
 
-            if (data.body) {
-                options.body = typeof data.body === 'object' ? JSON.stringify(data.body) : data.body;
-            }
-
-            const response = await makeHttpRequest(data.url, options);
-            const responsePayload = await response.json();
-
-            if (data.socket && wsManager) {
-                data.response = responsePayload;
-                wsManager.send(data);
-            }
-            return responsePayload;
+            const endpointResponse = await crud.send(endpointQuery);
+            endpointConfig = endpointResponse?.object?.[0] || {};
         }
 
-        // PATH B: Standard Dynamic Configuration Resolve & Execute
-        if (!data.method || !data.endpoint) {
-            throw new Error("API execution request is missing 'method' or 'endpoint' directives.");
-        }
-
-        const providerName = data.method.split(/[./]/)[0];
-        const httpMethod = data.endpoint.split(" ")[0].toUpperCase();
-
-        const apiConfig = await getApiConfig({ organization_id: orgId, host }, providerName);
-
-        const endpointQuery = {
-            method: 'object.read',
-            array: 'endpoints',
+        const apiContext = {
+            ...(parentContext || {}),
+            payload: data,
+            event: parentContext?.event || {},
             organization_id: orgId,
             host,
-            $filter: {
-                query: { api_id: apiConfig._id, endpoint: data.endpoint, enabled: true },
-                limit: 1
-            }
-        };
-
-        const endpointResponse = await crud.send(endpointQuery);
-        const endpointConfig = endpointResponse?.object?.[0] || {};
-
-        const apiContext = parentContext || {
-            data,
-            event: {},
-            actions: [],
-            organization_id: orgId,
-            host,
-            crud,
-            wsManager,
+            crud: parentContext?.crud || crud,
+            wsManager: parentContext?.wsManager || wsManager,
             key: apiConfig.key,
             config: apiConfig
         };
 
-        const rawActions = endpointConfig.actions || endpointConfig.action;
-        if (rawActions) {
-            const actionList = Array.isArray(rawActions) ? rawActions : [rawActions];
-            for (const actionItem of actionList) {
-                const result = await astAsync({ executeAST: actionItem, sandbox: createSandbox(apiContext) });
-                apiContext.actions.push(result);
-            }
+        // Requests layer from general to specific: payload, API configuration,
+        // then the matched endpoint as the authoritative macro override.
+        let request = {
+            ...data,
+            ...endpointConfig,
+            method: endpointConfig.method?.trim() || apiConfig.method?.trim() || data.method?.trim(),
+            endpoint: endpointConfig.endpoint || apiConfig.endpoint || endpoint,
+            url: endpointConfig.url?.trim() || apiConfig.url?.trim() || payloadUrl,
+            headers: {
+                ...(data.headers || {}),
+                ...(apiConfig.headers || {}),
+                ...(endpointConfig.headers || {})
+            },
+            timeout: endpointConfig.timeout ?? apiConfig.timeout ?? data.timeout ?? 15000,
+            searchParams: endpointConfig.searchParams ?? apiConfig.searchParams ?? data.searchParams,
+            data: endpointConfig.data ?? apiConfig.data ?? data.data
+        };
 
-            const finalMacroResult = apiContext.actions[apiContext.actions.length - 1];
-            if (finalMacroResult !== undefined) {
-                data[providerName] = finalMacroResult;
-            }
+        request = await astAsync({
+            executeAST: request,
+            sandbox: createSandbox(apiContext)
+        });
 
+        if (request.resolved) {
+            data.data = request.data
             if (data.socket && wsManager) {
                 wsManager.send(data);
             }
-            return;
+            return data;
         }
 
-        if (!apiConfig.url) {
-            throw new Error(`Configuration missing 'url' base for provider '${providerName}'.`);
+        let url = request.url?.trim();
+        if (!url) {
+            throw new Error(`Configuration missing 'url' for API '${apiName || "direct"}'.`);
         }
 
-        let url = apiConfig.url.endsWith("/") ? apiConfig.url.slice(0, -1) : apiConfig.url;
-        let endpointPath = endpointConfig.path || data.endpoint.split(" ")[1];
-        url += endpointPath.startsWith("/") ? endpointPath : `/${endpointPath}`;
-
-        if (data[providerName]?.$searchParams) {
-            url += objectToSearchParams(data[providerName].$searchParams);
-            delete data[providerName].$searchParams;
+        if (request.endpoint) {
+            url = url.endsWith("/") ? url.slice(0, -1) : url;
+            url += request.endpoint.startsWith("/") ? request.endpoint : `/${request.endpoint}`;
         }
 
-        let headers = { ...(apiConfig.headers || {}), ...(endpointConfig.headers || {}) };
-        headers = await astAsync({ executeAST: headers, sandbox: createSandbox(apiContext) });
+        const searchParams = objectToSearchParams(request.searchParams);
+        url += searchParams && url.includes("?") ? `&${searchParams.slice(1)}` : searchParams;
 
-        const options = { method: httpMethod, headers, timeout: 15000 };
+        const resolvedHttpMethod = request.method?.trim().toUpperCase();
+        if (!resolvedHttpMethod) {
+            throw new Error(`Configuration missing 'method' for API '${apiName || "direct"}'.`);
+        }
+        const options = {
+            method: resolvedHttpMethod,
+            headers: request.headers,
+            timeout: request.timeout
+        };
 
-        if (!["GET", "HEAD"].includes(httpMethod) && data[providerName]) {
-            const bodyPayload = await astAsync({ executeAST: data[providerName], sandbox: createSandbox(apiContext) });
-
-            if (typeof bodyPayload === 'object' && bodyPayload !== null) {
-                options.body = JSON.stringify(bodyPayload);
+        if (!["GET", "HEAD"].includes(resolvedHttpMethod) && request.data !== undefined) {
+            if (typeof request.data === 'object' && request.data !== null) {
+                options.body = JSON.stringify(request.data);
                 if (!options.headers["Content-Type"]) {
                     options.headers["Content-Type"] = "application/json; charset=utf-8";
                 }
             } else {
-                options.body = String(bodyPayload);
+                options.body = String(request.data);
             }
         }
 
         const response = await makeHttpRequest(url, options);
-        const responsePayload = await response.json();
-        data[providerName] = responsePayload;
+        data.data = await response.json();
 
         if (data.socket && wsManager) {
             wsManager.send(data);
         }
-        return responsePayload;
+        return data;
     } catch (error) {
         if (!Array.isArray(data.error)) {
             data.error = data.error ? [data.error] : [];
@@ -335,77 +348,44 @@ export async function webhook(req, res) {
             return res.end(JSON.stringify({ error: `Webhook configuration for path '${webhookPath}' not found.` }));
         }
 
-        let rawBody = "";
-        await new Promise((resolve, reject) => {
-            req.on("data", (chunk) => { rawBody += chunk.toString(); });
-            req.on("end", resolve);
-            req.on("error", reject);
-        });
-
-        let parsedEvent = {};
-        if (rawBody) {
-            try {
-                parsedEvent = JSON.parse(rawBody);
-            } catch {
-                parsedEvent = { rawBody };
-            }
+        let apiConfig = {};
+        if (webhookConfig.api_id) {
+            const apiResponse = await crud.send({
+                method: 'object.read',
+                array: 'apis',
+                organization_id: organization._id,
+                host: hostname,
+                $filter: {
+                    query: { _id: webhookConfig.api_id, enabled: true },
+                    limit: 1
+                }
+            });
+            apiConfig = apiResponse?.object?.[0] || {};
         }
 
         const context = {
-            data: {},
-            event: parsedEvent,
-            actions: [],
             request: req,
             response: res,
-            rawBody,
+            searchParams: searchParamsToObject(urlObject.searchParams),
             host: hostname,
             organization,
             organization_id: organization._id,
             crud,
-            wsManager
+            wsManager,
+            key: apiConfig.key,
+            config: apiConfig
         };
 
-        context.request.query = Object.fromEntries(urlObject.searchParams.entries());
-
-        if (webhookConfig.authenticate?.method === "webhooks.constructEvent" && Array.isArray(webhookConfig.authenticate.parameters)) {
-            const resolvedParams = await astAsync({ executeAST: [...webhookConfig.authenticate.parameters], sandbox: createSandbox(context) });
-            const [payload, signature, secret] = resolvedParams;
-
-            const computedSignature = security.createWebhookSignature(payload, secret, { format: 'github' });
-
-            if (!security.timingSafeEqual(computedSignature, String(signature))) {
-                res.writeHead(401, { "Content-Type": "application/json" });
-                return res.end(JSON.stringify({ error: "Unauthorized access: signature verification failed." }));
-            }
-        }
-
-        let executeOperations = null;
-        const actionConfig = webhookConfig.action;
-
-        if (actionConfig) {
-            if (typeof actionConfig === 'string') {
-                const actionName = await astAsync({ executeAST: actionConfig, sandbox: createSandbox(context) });
-                if (actionName && webhookConfig.actions?.[actionName]) {
-                    executeOperations = webhookConfig.actions[actionName];
-                }
-            } else {
-                executeOperations = actionConfig;
-            }
-        }
-
-        if (executeOperations) {
-            const opsList = Array.isArray(executeOperations) ? executeOperations : [executeOperations];
-            for (const op of opsList) {
-                const stepResult = await astAsync({ executeAST: Array.isArray(op) ? op : [op], sandbox: createSandbox(context) });
-                context.actions.push(stepResult);
-            }
-        }
+        const result = await astAsync({
+            executeAST: webhookConfig,
+            sandbox: createSandbox(context)
+        });
 
         if (res && !res.writableEnded) {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({
                 message: "Webhook processed successfully",
-                payload: context.actions[context.actions.length - 1] || {}
+                payload: result
             }));
         }
     } catch (error) {

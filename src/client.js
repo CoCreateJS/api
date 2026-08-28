@@ -6,6 +6,38 @@ import Actions from "@cocreate/actions";
 import { render } from "@cocreate/render";
 import "@cocreate/element-prototype";
 
+function getEndpointGroup({ name, action, element, form }) {
+	const operation = String(action || "").replaceAll('"', '\\"');
+	const operationSelector = operation ? `[${name}="${operation}"]` : null;
+	const endpointSelector = `[${name}-endpoint]`;
+	return (
+		(operationSelector && element?.closest(operationSelector)) ||
+		element?.closest(endpointSelector) ||
+		(operationSelector && form?.matches?.(operationSelector) ? form : null) ||
+		(form?.matches?.(endpointSelector) ? form : null)
+	);
+}
+
+function getGroupElements({ name, action, element, form, response = false }) {
+	const group = getEndpointGroup({ name, action, element, form });
+	const stateAttribute = `${name}-${response ? "response" : "request"}`;
+	let elements = [];
+
+	if (group) {
+		elements = [group, ...group.querySelectorAll(`[${name}-key]`)].filter(
+			(candidate) =>
+				getEndpointGroup({ name, action, element: candidate, form }) === group &&
+				candidate.getAttribute(stateAttribute) !== "false"
+		);
+	} else if (form) {
+		const selector = `[${name}="${action}"]:not([${stateAttribute}="false"])`;
+		if (form.matches?.(selector)) elements.push(form);
+		elements.push(...form.querySelectorAll(selector));
+	}
+
+	return elements.length ? elements : element ? [element] : [];
+}
+
 const CoCreateApi = {
 	modules: {},
 
@@ -35,7 +67,12 @@ const CoCreateApi = {
 				name,
 				callback: (action) => {
 					action.form = action.form || document;
-					self.request({ ...action, type: "action" });
+					self.request({
+						...action,
+						action: action.method,
+						method: undefined,
+						type: "action"
+					});
 				}
 			});
 
@@ -47,7 +84,9 @@ const CoCreateApi = {
 				});
 			};
 
-			let elements = document.querySelectorAll(`[${name}]`);
+			let elements = document.querySelectorAll(
+				`[${name}], [${name}-endpoint]`
+			);
 			for (let i = 0; i < elements.length; i++) {
 				inputEvent(elements[i]);
 				this.request({ name, element: elements[i], type: "onload" });
@@ -56,7 +95,7 @@ const CoCreateApi = {
 			Observer.init({
 				name: `${name}NodeObserver`,
 				types: ["addedNodes"],
-				selector: `[${name}]`,
+				selector: `[${name}], [${name}-endpoint]`,
 				callback: function (mutation) {
 					inputEvent(mutation.target);
 					self.request({
@@ -70,7 +109,7 @@ const CoCreateApi = {
 			Observer.init({
 				name: `${name}AttributeObserver`,
 				types: ["attributes"],
-				attributeFilter: [name],
+				attributeFilter: [name, `${name}-endpoint`, `${name}-method`],
 				callback: function (mutation) {
 					self.request({
 						name,
@@ -84,8 +123,14 @@ const CoCreateApi = {
 
 	request: async function (object) {
 		if (object.element) {
+			if (!object.action)
+				object.action = object.element.getAttribute(object.name);
+			const group = getEndpointGroup(object);
+			if (!object.endpoint)
+				object.endpoint =
+					group?.getAttribute(`${object.name}-endpoint`) || object.action;
 			if (!object.method)
-				object.method = object.element.getAttribute(object.name);
+				object.method = group?.getAttribute(`${object.name}-method`);
 			if (!object.key)
 				object.key = object.element.getAttribute(`${object.name}-key`);
 			if (!object.event)
@@ -95,34 +140,42 @@ const CoCreateApi = {
 		}
 
 		if (
-			this.modules[object.name][object.method] &&
-			this.modules[object.name][object.method].request
+			this.modules[object.name][object.action] &&
+			this.modules[object.name][object.action].request
 		)
-			this.modules[object.name][object.method].request(object);
+			this.modules[object.name][object.action].request(object);
 		else if (
 			(!object.event && object.type === "action") ||
 			(object.event && object.event.includes(object.type))
 		) {
 			object.data = await CoCreateApi.getData(object);
-			if (Object.keys(object.data).length) CoCreateApi.send(object);
+			if (
+				object.action ||
+				object.endpoint ||
+				object.method ||
+				Object.keys(object.data).length
+			)
+				CoCreateApi.send(object);
 		}
 	},
 
 	response: function (object) {
 		const name = object.name;
-		const method = object.method;
-		const data = object.data;
-		if (this.modules[name][method] && this.modules[name][method].response)
-			this.modules[name][method].response(data[name]);
-		else if (data.error) {
+		const action = object.action;
+		const response = object.data;
+		const data = response.data;
+		if (this.modules[name][action] && this.modules[name][action].response)
+			this.modules[name][action].response(data);
+		else if (response.error) {
 			render({
 				selector: `[template*='${name}']`,
 				data: [
 					{
 						type: name,
-						method,
+						action,
+						method: object.method,
 						status: "failed",
-						message: data.error
+						message: response.error
 					}
 				]
 			});
@@ -140,46 +193,54 @@ const CoCreateApi = {
 	},
 
 	send: async function (object) {
-		object.data = await Socket.send({
-			method: object.name + "." + object.method,
-			[object.name]: object.data,
+		const isDataObject = object.data &&
+			typeof object.data === "object" &&
+			!Array.isArray(object.data);
+		const data = isDataObject ? { ...object.data } : object.data;
+		const request = {
+			api: object.name,
+			method: object.method,
+			endpoint: object.endpoint,
+			data,
 			broadcast: false,
 			broadcastBrowser: false,
 			status: "await"
-		});
+		};
+
+		for (const directive of ["url", "headers", "timeout", "searchParams"]) {
+			const value = object[directive] ?? (isDataObject ? data[directive] : undefined);
+			if (value !== undefined) request[directive] = value;
+			if (isDataObject) delete data[directive];
+		}
+
+		object.data = await Socket.send(request);
 		this.response(object);
 	},
 
-	getData: async function ({ name, method, element, form }) {
+	getData: async function ({ name, action, element, form }) {
 		let data = {};
 
 		if (!form && element) form = element.closest("form");
 		if (!form) form = document;
 
-		let elements;
-		if (form)
-			elements = form.querySelectorAll(
-				`[${name}="${method}"]:not([${name}-request="false"])`
-			);
-		if (!elements || elements.length == 0) elements = [element];
+		const elements = getGroupElements({
+			name,
+			action,
+			element,
+			form
+		});
 
 		for (let i = 0; i < elements.length; i++) {
 			if (!elements[i] || elements[i].closest("[template]")) continue;
-			let key = elements[i].getAttribute(`${name}-key`);
-			if (key) {
-				let value =
-					elements[i].stripeElement || (await elements[i].getValue());
+				let key = elements[i].getAttribute(`${name}-key`);
+				if (key) {
+					let value = await elements[i].getValue();
 				if (key.endsWith("[]")) {
 					if (!data[key]) data[key] = [];
 
 					if (Array.isArray(value)) data[key].push(...value);
 					else data[key].push(value);
 				} else data[key] = value;
-			}
-
-			let endpoint = elements[i].getAttribute("endpoint");
-			if (endpoint) {
-				data.endpoint = endpoint;
 			}
 
 			if (
@@ -209,19 +270,23 @@ const CoCreateApi = {
 
 	setData: function (object) {
 		const name = object.name;
-		const data = object.data;
+		const data = object.data.data;
 		let form = object.form;
 		if (!form) form = document;
 
-		let elements = form.querySelectorAll(
-			`[${name}="${object.method}"]:not([${name}-response="false"])`
-		);
-		if (!elements || elements.length == 0) return;
+		const elements = getGroupElements({
+			name,
+			action: object.action,
+			element: object.element,
+			form,
+			response: true
+		});
+		if (!elements.length) return;
 
 		for (let i = 0; i < elements.length; i++) {
-			let attribute = elements[i].getAttribute(name);
-			if (attribute) {
-				if (elements[i].hasAttribute("actions")) continue;
+			if (elements[i].hasAttribute("actions")) continue;
+			let key = elements[i].getAttribute(`${name}-key`);
+			if (key) {
 				let templateid = elements[i].getAttribute("template_id");
 				if (templateid) {
 					let items = document.querySelectorAll(
@@ -233,21 +298,19 @@ const CoCreateApi = {
 						data
 					});
 				} else if (elements[i].renderValue) {
-					let key = elements[i].getAttribute(`${name}-key`);
 					if (key === "{}") {
-						elements[i].renderValue(data[name]);
+						elements[i].renderValue(data);
 					} else {
-						let value = getValueFromObject(data[name], key);
+						let value = getValueFromObject(data, key);
 						if (typeof value === "function") {
 							value = value(); // Call the function and assign its return value.
 						}
 						elements[i].renderValue(value);
 					}
 				} else {
-					let key = elements[i].getAttribute(`${name}-key`);
-					if (key === "{}") elements[i].setValue(data[name]);
+					if (key === "{}") elements[i].setValue(data);
 					else {
-						let value = getValueFromObject(data[name], key);
+						let value = getValueFromObject(data, key);
 						if (typeof value === "function") {
 							value = value(); // Call the function and assign its return value.
 						}
