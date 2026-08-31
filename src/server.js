@@ -194,7 +194,7 @@ export async function send(data, parentContext = null) {
                 array: 'endpoints',
                 organization_id: orgId,
                 host,
-                $filter: {
+                filter: {
                     query: endpointFilter,
                     limit: 1
                 }
@@ -334,7 +334,7 @@ export async function webhook(req, res) {
             array: 'webhooks',
             organization_id: organization._id,
             host: hostname,
-            $filter: {
+            filter: {
                 query: { path: webhookPath, enabled: true },
                 limit: 1
             }
@@ -355,7 +355,7 @@ export async function webhook(req, res) {
                 array: 'apis',
                 organization_id: organization._id,
                 host: hostname,
-                $filter: {
+                filter: {
                     query: { _id: webhookConfig.api_id, enabled: true },
                     limit: 1
                 }
@@ -457,7 +457,7 @@ export async function getApiConfig(data, name) {
         array: 'apis',
         organization_id: orgId,
         host,
-        $filter: {
+        filter: {
             query: { name, enabled: true },
             limit: 1
         }
