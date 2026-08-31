@@ -132,6 +132,24 @@ function createSandbox(context) {
         }
     };
 
+    // Preserve privileged runtime bindings even when an evaluated record has
+    // ordinary fields with the same names (for example api: "stripe"). The AST
+    // resolver prefers the dollar-prefixed binding for operators such as
+    // $api.send, while output fields may continue using their natural names.
+    Object.assign(sandbox, {
+        $payload: sandbox.payload,
+        $event: sandbox.event,
+        $request: sandbox.request,
+        $response: sandbox.response,
+        $header: sandbox.header,
+        $crud: sandbox.crud,
+        $socket: sandbox.socket,
+        $wsManager: sandbox.wsManager,
+        $security: sandbox.security,
+        $config: sandbox.config,
+        $api: sandbox.api
+    });
+
     if (isPlatformOrg) {
         sandbox.server = server;
     }
