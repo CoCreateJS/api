@@ -203,8 +203,7 @@ const CoCreateApi = {
 			endpoint: object.endpoint,
 			data,
 			broadcast: false,
-			broadcastBrowser: false,
-			status: "await"
+			broadcastClient: false
 		};
 
 		for (const directive of ["url", "headers", "timeout", "searchParams"]) {
