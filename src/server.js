@@ -114,6 +114,7 @@ function createSandbox(context) {
         response: context.response,
         header: context.request?.headers || context.header || {},
         searchParams: context.searchParams,
+        objectToSearchParams,
         searchParamsToObject,
         Buffer,
 
@@ -236,6 +237,7 @@ export async function send(data, parentContext = null) {
 
         // Requests layer from general to specific: payload, API configuration,
         // then the matched endpoint as the authoritative macro override.
+        const requestData = endpointConfig.data ?? apiConfig.data ?? data.data;
         let request = {
             ...data,
             ...endpointConfig,
@@ -248,9 +250,13 @@ export async function send(data, parentContext = null) {
                 ...(endpointConfig.headers || {})
             },
             timeout: endpointConfig.timeout ?? apiConfig.timeout ?? data.timeout ?? 15000,
-            searchParams: endpointConfig.searchParams ?? apiConfig.searchParams ?? data.searchParams,
-            data: endpointConfig.data ?? apiConfig.data ?? data.data
+            searchParams: endpointConfig.searchParams ?? apiConfig.searchParams ?? data.searchParams
         };
+
+        // Request data may depend on named actions, so append it after the
+        // endpoint definition to preserve sequential AST evaluation.
+        delete request.data;
+        request.data = requestData;
 
         request = await astAsync({
             executeAST: request,
@@ -290,8 +296,10 @@ export async function send(data, parentContext = null) {
 
         if (!["GET", "HEAD"].includes(resolvedHttpMethod) && request.data !== undefined) {
             if (typeof request.data === 'object' && request.data !== null) {
-                options.body = JSON.stringify(request.data);
-                if (!options.headers["Content-Type"]) {
+                options.body = request.encoding === "form"
+                    ? objectToSearchParams(request.data, false)
+                    : JSON.stringify(request.data);
+                if (!options.headers["Content-Type"] && !options.headers["content-type"]) {
                     options.headers["Content-Type"] = "application/json; charset=utf-8";
                 }
             } else {
@@ -300,7 +308,7 @@ export async function send(data, parentContext = null) {
         }
 
         const response = await makeHttpRequest(url, options);
-        data.data = await response.json();
+        data.data = await parseResponseData(response);
 
         if (data.socket && wsManager) {
             wsManager.send(data);
@@ -319,6 +327,7 @@ export async function send(data, parentContext = null) {
         }
         if (data.socket && wsManager) {
             wsManager.send(data);
+            return data;
         }
         throw error;
     }
@@ -447,6 +456,17 @@ export async function makeHttpRequest(url, options) {
     } catch (error) {
         clearTimeout(timeoutId);
         throw error;
+    }
+}
+
+async function parseResponseData(response) {
+    const text = await response.text();
+    if (!text) return null;
+
+    try {
+        return JSON.parse(text);
+    } catch {
+        return text;
     }
 }
 
