@@ -185,7 +185,9 @@ export async function send(data, parentContext = null) {
 
         const apiName = data.api?.trim() || "";
         const endpoint = data.endpoint?.trim() || "";
-        const payloadUrl = data.url?.trim() || "";
+        const payloadUrl = typeof data.url === "string"
+            ? data.url.trim()
+            : data.url || "";
         const apiConfig = apiName
             ? await getApiConfig({ organization_id: orgId, host }, apiName)
             : {};
@@ -243,7 +245,9 @@ export async function send(data, parentContext = null) {
             ...endpointConfig,
             method: endpointConfig.method?.trim() || apiConfig.method?.trim() || data.method?.trim(),
             endpoint: endpointConfig.endpoint || apiConfig.endpoint || endpoint,
-            url: endpointConfig.url?.trim() || apiConfig.url?.trim() || payloadUrl,
+            // URL configurations may be AST objects. Preserve them until the
+            // request is evaluated, then normalize the resolved string below.
+            url: endpointConfig.url || apiConfig.url || payloadUrl,
             headers: {
                 ...(data.headers || {}),
                 ...(apiConfig.headers || {}),
