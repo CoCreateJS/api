@@ -448,11 +448,19 @@ export async function makeHttpRequest(url, options) {
 
         if (!response.ok) {
             const text = await response.text();
-            const error = new Error(`HTTP error! Status: ${response.status} ${response.statusText}`);
+            const providerError = parseXmlError(text);
+            const detail = providerError?.message;
+            const code = providerError?.code;
+            const error = new Error(
+                detail
+                    ? `${code ? `${code}: ` : ""}${detail}`
+                    : `HTTP error! Status: ${response.status} ${response.statusText}`
+            );
             error.response = {
                 status: response.status,
                 statusText: response.statusText,
-                data: text
+                data: text,
+                error: providerError
             };
             throw error;
         }
@@ -461,6 +469,40 @@ export async function makeHttpRequest(url, options) {
         clearTimeout(timeoutId);
         throw error;
     }
+}
+
+function decodeXmlText(value) {
+    if (value === undefined) return undefined;
+    return value
+        .replace(/&#x([\da-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+        .replace(/&#(\d+);/g, (_, decimal) => String.fromCodePoint(parseInt(decimal, 10)))
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&amp;/g, "&");
+}
+
+function getXmlTagValue(xml, tagName) {
+    if (!xml || typeof xml !== "string") return undefined;
+    const match = xml.match(
+        new RegExp(`<${tagName}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tagName}>`, "i")
+    );
+    return match ? decodeXmlText(match[1].trim()) : undefined;
+}
+
+function parseXmlError(text) {
+    if (!text || typeof text !== "string" || !text.trimStart().startsWith("<")) {
+        return undefined;
+    }
+
+    const code = getXmlTagValue(text, "Code");
+    const message = getXmlTagValue(text, "Message");
+    const requestId = getXmlTagValue(text, "RequestId") ||
+        getXmlTagValue(text, "RequestID");
+
+    if (!code && !message && !requestId) return undefined;
+    return { code, message, requestId };
 }
 
 async function parseResponseData(response) {
