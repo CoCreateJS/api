@@ -108,7 +108,12 @@ function createSandbox(context) {
     const secureWs = createTenantProxy(context.wsManager, context.organization_id, context.host);
 
     const sandbox = {
+        // Provider fields are configuration variables. For example, a
+        // provider record containing `token` exposes `$token` to its AST
+        // expressions. Trusted runtime bindings below remain authoritative.
+        ...(context.config || {}),
         payload: context.payload,
+        data: context.data || context.payload,
         event: context.event,
         request: context.request,
         response: context.response,
@@ -139,6 +144,7 @@ function createSandbox(context) {
     // $api.send, while output fields may continue using their natural names.
     Object.assign(sandbox, {
         $payload: sandbox.payload,
+        $data: sandbox.data,
         $event: sandbox.event,
         $request: sandbox.request,
         $response: sandbox.response,
@@ -240,7 +246,18 @@ export async function send(data, parentContext = null) {
         // Requests layer from general to specific: payload, API configuration,
         // then the matched endpoint as the authoritative macro override.
         const requestData = endpointConfig.data ?? apiConfig.data ?? data.data;
+        const {
+            headers: providerHeaders,
+            data: providerData,
+            endpoint: providerEndpoint,
+            url: providerUrl,
+            method: providerMethod,
+            ...providerVariables
+        } = apiConfig;
         let request = {
+            // Provider-native variables must exist in the execution envelope
+            // before endpoint and header AST expressions are evaluated.
+            ...providerVariables,
             ...data,
             ...endpointConfig,
             method: endpointConfig.method?.trim() || apiConfig.method?.trim() || data.method?.trim(),
@@ -250,7 +267,7 @@ export async function send(data, parentContext = null) {
             url: endpointConfig.url || apiConfig.url || payloadUrl,
             headers: {
                 ...(data.headers || {}),
-                ...(apiConfig.headers || {}),
+                ...(providerHeaders || {}),
                 ...(endpointConfig.headers || {})
             },
             timeout: endpointConfig.timeout ?? apiConfig.timeout ?? data.timeout ?? 15000,
@@ -264,6 +281,8 @@ export async function send(data, parentContext = null) {
 
         request = await astAsync({
             executeAST: request,
+            // `$data` is the caller's original API envelope. Endpoint records
+            // map from it while provider fields remain top-level variables.
             sandbox: createSandbox(apiContext)
         });
 
