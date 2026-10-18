@@ -167,6 +167,7 @@ const CoCreateApi = {
 		if (this.modules[name][action] && this.modules[name][action].response)
 			this.modules[name][action].response(data);
 		else if (response.error) {
+			object.abort?.();
 			render({
 				selector: `[template*='${name}']`,
 				data: [
@@ -179,6 +180,11 @@ const CoCreateApi = {
 					}
 				]
 			});
+			object.element?.dispatchEvent(
+				new CustomEvent("error", {
+					detail: { error: response.error, data: response }
+				})
+			);
 		} else {
 			CoCreateApi.setData(object);
 
@@ -212,7 +218,11 @@ const CoCreateApi = {
 			if (isDataObject) delete data[directive];
 		}
 
-		object.data = await Socket.send(request);
+		try {
+			object.data = await Socket.send(request);
+		} catch (error) {
+			object.data = { error: error?.message || String(error) };
+		}
 		this.response(object);
 	},
 

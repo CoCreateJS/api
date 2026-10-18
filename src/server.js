@@ -29,7 +29,6 @@ import {
 } from '@cocreate/utils';
 
 let server = null;
-let wsManager = null;
 let crud = null;
 
 const API = {
@@ -39,20 +38,16 @@ const API = {
 };
 
 /**
- * Binds server core services and registers WebSocket event handlers for API dispatch.
+ * Binds server core services. Socket access is resolved when a request runs.
  *
  * @async
- * @param {Object} Server - Core server instance containing wsManager and crud instances.
- * @param {Object} Server.wsManager - WebSocket event emitter manager.
+ * @param {Object} Server - Core server instance containing CRUD and, later, a socket manager on workers.
  * @param {Object} Server.crud - Database CRUD service operator.
- * @returns {Promise<Object>} Exported operational API interface object (`{ send, getApiConfig }`).
+ * @returns {Promise<Object>} Exported API interface.
  */
 export async function init(Server) {
     server = Server;
-    wsManager = server.wsManager;
     crud = server.crud;
-
-    wsManager.on("api", send);
 
     return API;
 }
@@ -186,6 +181,7 @@ function createSandbox(context) {
  */
 export async function send(data, parentContext = null) {
     try {
+        const wsManager = server?.wsManager;
         const orgId = parentContext?.organization_id || data.socket?.organization_id || data.organization_id;
         const host = parentContext?.host || data.socket?.host || data.host;
 
@@ -338,6 +334,7 @@ export async function send(data, parentContext = null) {
         }
         return data;
     } catch (error) {
+        const wsManager = server?.wsManager;
         if (!Array.isArray(data.error)) {
             data.error = data.error ? [data.error] : [];
         }
@@ -366,6 +363,7 @@ export async function send(data, parentContext = null) {
  */
 export async function webhook(req, res) {
     try {
+        const wsManager = server?.wsManager;
         const urlObject = new URL(`http://${req.headers.host}${req.url}`);
         const hostname = urlObject.hostname;
 
