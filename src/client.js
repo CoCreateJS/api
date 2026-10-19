@@ -67,7 +67,7 @@ const CoCreateApi = {
 				name,
 				callback: (action) => {
 					action.form = action.form || document;
-					self.request({
+					return self.request({
 						...action,
 						action: action.method,
 						method: undefined,
@@ -155,7 +155,7 @@ const CoCreateApi = {
 				object.method ||
 				Object.keys(object.data).length
 			)
-				CoCreateApi.send(object);
+				return CoCreateApi.send(object);
 		}
 	},
 
@@ -167,7 +167,11 @@ const CoCreateApi = {
 		if (this.modules[name][action] && this.modules[name][action].response)
 			this.modules[name][action].response(data);
 		else if (response.error) {
-			object.abort?.();
+			object.abort?.({
+				code: "api-request-failed",
+				message: response.error?.message || String(response.error),
+				cause: response.error
+			});
 			render({
 				selector: `[template*='${name}']`,
 				data: [
