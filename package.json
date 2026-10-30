@@ -35,6 +35,176 @@
     "url": "https://github.com/CoCreate-app/CoCreate-api/issues"
   },
   "homepage": "https://cocreate.app/docs/api",
+  "cocreate": {
+    "environment": [
+      "client",
+      "server"
+    ],
+    "interface": {
+      "schemaVersion": 1,
+      "client": {
+        "declarative": {
+          "binding": {
+            "selectors": [
+              "[api]",
+              "[module]",
+              "[api-endpoint]",
+              "[module-endpoint]"
+            ],
+            "triggers": [
+              "onload",
+              "input",
+              "attribute change",
+              "Actions invocation"
+            ],
+            "initializesExistingElements": true,
+            "observesAddedNodes": true
+          },
+          "attributes": [
+            {
+              "name": "api | module",
+              "valueType": "string",
+              "role": "Declares/registers an API provider name; provider-specific attributes are derived from this name."
+            },
+            {
+              "name": "{name}",
+              "valueType": "string",
+              "role": "Provider-specific operation/action name."
+            },
+            {
+              "name": "{name}-endpoint",
+              "valueType": "string",
+              "role": "Endpoint name or path; may be defined on an ancestor group."
+            },
+            {
+              "name": "{name}-method",
+              "valueType": "string",
+              "role": "Provider or HTTP method."
+            },
+            {
+              "name": "{name}-key",
+              "valueType": "string",
+              "role": "Maps an element's value into request data or maps response data back to the element. A key ending in [] accumulates values into an array; {} maps the whole object."
+            },
+            {
+              "name": "{name}-event",
+              "valueType": "string",
+              "role": "Limits automatic requests to matching event types."
+            },
+            {
+              "name": "{name}-request | {name}-response",
+              "valueType": "boolean-like string",
+              "acceptedValues": [
+                "false"
+              ],
+              "role": "Excludes an element from request collection or response mapping when set to false."
+            }
+          ],
+          "actions": [
+            {
+              "name": "{name}",
+              "description": "Actions integration registers each provider as an action; invocation requests the provider operation and processes its response."
+            }
+          ],
+          "selectors": [
+            "[${name}-endpoint]",
+            "[${name}=\"${action}\"]:not([${stateAttribute}=\"false\"])",
+            "[${name}], [${name}-endpoint]",
+            "[template*='${name}']",
+            "[template=\"${templateid}\"]",
+            "[module], [api]"
+          ]
+        },
+        "api": {
+          "defaultExport": "CoCreateApi",
+          "methods": [
+            {
+              "name": "init",
+              "signature": "init(moduleConfig?)",
+              "description": "Scans declarative providers when called without a config, or registers the supplied provider config."
+            },
+            {
+              "name": "register",
+              "signature": "register({ name, endPoints, options })",
+              "description": "Registers a provider, its Actions callback, DOM listeners, and observers."
+            },
+            {
+              "name": "request",
+              "signature": "request(requestContext)",
+              "description": "Builds and dispatches a provider request from context and associated elements."
+            },
+            {
+              "name": "response",
+              "signature": "response(requestContext)",
+              "description": "Handles a response, maps values to elements, dispatches completion, and routes errors."
+            },
+            {
+              "name": "send",
+              "signature": "send(requestContext)",
+              "description": "Sends a client request through CoCreate Socket."
+            },
+            {
+              "name": "getData",
+              "signature": "getData({ name, action, element, form })",
+              "description": "Collects and normalizes request values from the relevant element group."
+            },
+            {
+              "name": "setData",
+              "signature": "setData(requestContext)",
+              "description": "Maps response data back to matching elements using setValue or renderValue."
+            }
+          ],
+          "properties": [
+            "modules"
+          ]
+        }
+      },
+      "server": {
+        "api": {
+          "defaultExport": "{ init }",
+          "namedExports": [
+            "init",
+            "send",
+            "webhook",
+            "makeHttpRequest",
+            "getApiConfig"
+          ],
+          "methods": [
+            {
+              "name": "init",
+              "signature": "init(Server)",
+              "description": "Binds server services and returns the server API object."
+            },
+            {
+              "name": "send",
+              "signature": "send(data, parentContext?)",
+              "description": "Resolves API and endpoint configuration, evaluates configured AST operations, or sends an outbound HTTP request."
+            },
+            {
+              "name": "webhook",
+              "signature": "webhook(req, res)",
+              "description": "Resolves and processes an incoming configured webhook request."
+            },
+            {
+              "name": "makeHttpRequest",
+              "signature": "makeHttpRequest(url, options)",
+              "description": "Dispatches a fetch request with timeout and response/error handling."
+            },
+            {
+              "name": "getApiConfig",
+              "signature": "getApiConfig(data, name)",
+              "description": "Resolves an enabled provider configuration for an organization and host."
+            }
+          ],
+          "initResultMethods": [
+            "send",
+            "webhook",
+            "getApiConfig"
+          ]
+        }
+      }
+    }
+  },
   "funding": {
     "type": "GitHub Sponsors ❤",
     "url": "https://github.com/sponsors/CoCreate-app"
