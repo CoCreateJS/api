@@ -100,7 +100,7 @@ Clicking the button collects every `[stripe="customers.create"]` element in the 
 {
 	"method": "stripe.customers.create",
 	"stripe": {
-		"email": "developer@cocreate.app",
+		"email": "developer@CoCreateJS.com",
 		"metadata": { "workspace": "production" }
 	},
 	"status": "await"
@@ -254,7 +254,7 @@ const payload = {
       workspace: "production"
     }
   },
-  userEmail: "developer@cocreate.app"
+  userEmail: "developer@CoCreateJS.com"
 };
 
 const result = await apiGateway.executeApi(payload);
@@ -344,9 +344,9 @@ Inbound webhooks configured with authentication rules are validated using `crypt
 
 ## How to Contribute
 
-We encourage contributions to all CoCreate libraries. Please see our **[CONTRIBUTING.md](https://github.com/CoCreate-app/CoCreate-api/blob/master/CONTRIBUTING.md)** guide for development workflows and contribution guidelines.
+We encourage contributions to all CoCreate libraries. Please see our **[CONTRIBUTING.md](https://github.com/CoCreateJS/CoCreate-api/blob/master/CONTRIBUTING.md)** guide for development workflows and contribution guidelines.
 
-If you discover a bug or would like to request a feature, please open an issue on our **[GitHub Issues](https://github.com/CoCreate-app/CoCreate-api/issues)** tracker.
+If you discover a bug or would like to request a feature, please open an issue on our **[GitHub Issues](https://github.com/CoCreateJS/CoCreate-api/issues)** tracker.
 
 For complete API documentation, integration examples, and webhook guides, visit:
 
