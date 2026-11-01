@@ -44,6 +44,8 @@ const API = {
  * @param {Object} Server - Core server instance containing CRUD and, later, a socket manager on workers.
  * @param {Object} Server.crud - Database CRUD service operator.
  * @returns {Promise<Object>} Exported API interface.
+ * @public
+ * @environment server
  */
 export async function init(Server) {
     server = Server;
@@ -59,6 +61,8 @@ export async function init(Server) {
  * @param {string} orgId - Multi-tenant organization identifier.
  * @param {string} host - Host domain identifier.
  * @returns {Proxy|undefined} Proxied target service with auto-injected tenant parameters, or undefined if target is falsy.
+ * @private
+ * @environment server
  */
 function createTenantProxy(target, orgId, host) {
     if (!target) return undefined;
@@ -96,6 +100,8 @@ function createTenantProxy(target, orgId, host) {
  * @param {string} context.organization_id - Target multi-tenant organization ID.
  * @param {string} context.host - Target host domain.
  * @returns {Object} Secure AST execution sandbox object containing firewalled utilities.
+ * @private
+ * @environment server
  */
 function createSandbox(context) {
     const isPlatformOrg = server?.organization_id && (context.organization_id === server.organization_id);
@@ -129,6 +135,11 @@ function createSandbox(context) {
         host: context.host,
 
         api: {
+            /**
+             *
+ * @public
+ * @environment server
+ */
             send: (apiData) => send(apiData, context)
         }
     };
@@ -178,6 +189,8 @@ function createSandbox(context) {
  * @param {Object|null} [parentContext=null] - Outer sandbox execution context when nested.
  * @returns {Promise<Object>} The mutated execution envelope, with response content assigned to `data.data`.
  * @throws {Error} If required directives are missing, provider configuration is invalid, or HTTP dispatch fails.
+ * @public
+ * @environment server
  */
 export async function send(data, parentContext = null) {
     try {
@@ -360,6 +373,8 @@ export async function send(data, parentContext = null) {
  * @param {Object} req - Native Node.js HTTP incoming request stream.
  * @param {Object} res - Native Node.js HTTP server response stream.
  * @returns {Promise<void>}
+ * @public
+ * @environment server
  */
 export async function webhook(req, res) {
     try {
@@ -453,6 +468,8 @@ export async function webhook(req, res) {
  * @param {number} [options.timeout=15000] - Timeout threshold in milliseconds before aborting.
  * @returns {Promise<Response>} Native fetch Response instance.
  * @throws {Error} Throws HTTP error status or network timeout error.
+ * @public
+ * @environment server
  */
 export async function makeHttpRequest(url, options) {
     const controller = new AbortController();
@@ -543,6 +560,8 @@ async function parseResponseData(response) {
  * @param {string} name - API provider identifier (e.g., 'stripe', 'openai', 'twilio').
  * @returns {Promise<Object>} Standardized API configuration object containing key, url, and headers.
  * @throws {Error} If organization mapping fails or integration settings do not exist.
+ * @public
+ * @environment server
  */
 export async function getApiConfig(data, name) {
     let { organization_id: orgId, host } = data || {};
@@ -577,3 +596,16 @@ export async function getApiConfig(data, name) {
 export default {
     init
 };
+
+/**
+ * Default export contract for this module.
+ *
+ * @name api-default-export
+ * @kind member
+ * @default-export
+ * @environment server
+ * @example
+ * ```json
+ * "{ init }"
+ * ```
+ */

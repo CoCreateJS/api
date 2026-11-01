@@ -39,8 +39,19 @@ function getGroupElements({ name, action, element, form, response = false }) {
 }
 
 const CoCreateApi = {
+	/**
+	 *
+ * @public
+ * @environment client
+ */
 	modules: {},
 
+	/**
+	 * Scans declarative providers when called without a config, or registers the supplied provider config.
+	 *
+ * @public
+ * @environment client
+ */
 	init: function (moduleConfig) {
 		if (!moduleConfig) {
 			let elements = document.querySelectorAll("[api], [module]");
@@ -58,6 +69,12 @@ const CoCreateApi = {
 		}
 	},
 
+	/**
+	 * Registers a provider, its Actions callback, DOM listeners, and observers.
+	 *
+ * @public
+ * @environment client
+ */
 	register: function ({ name, endPoints, options }) {
 		const self = this;
 		if (typeof this.modules[name] === "undefined") {
@@ -121,6 +138,12 @@ const CoCreateApi = {
 		}
 	},
 
+	/**
+	 * Builds and dispatches a provider request from context and associated elements.
+	 *
+ * @public
+ * @environment client
+ */
 	request: async function (object) {
 		if (object.element) {
 			if (!object.action)
@@ -159,6 +182,12 @@ const CoCreateApi = {
 		}
 	},
 
+	/**
+	 * Handles a response, maps values to elements, dispatches completion, and routes errors.
+	 *
+ * @public
+ * @environment client
+ */
 	response: function (object) {
 		const name = object.name;
 		const action = object.action;
@@ -202,6 +231,12 @@ const CoCreateApi = {
 		}
 	},
 
+	/**
+	 * Sends a client request through CoCreate Socket.
+	 *
+ * @public
+ * @environment client
+ */
 	send: async function (object) {
 		const isDataObject = object.data &&
 			typeof object.data === "object" &&
@@ -230,6 +265,12 @@ const CoCreateApi = {
 		this.response(object);
 	},
 
+	/**
+	 * Collects and normalizes request values from the relevant element group.
+	 *
+ * @public
+ * @environment client
+ */
 	getData: async function ({ name, action, element, form }) {
 		let data = {};
 
@@ -281,6 +322,12 @@ const CoCreateApi = {
 		return data;
 	},
 
+	/**
+	 * Maps response data back to matching elements using setValue or renderValue.
+	 *
+ * @public
+ * @environment client
+ */
 	setData: function (object) {
 		const name = object.name;
 		const data = object.data.data;
@@ -350,3 +397,153 @@ Observer.init({
 CoCreateApi.init();
 
 export default CoCreateApi;
+
+/**
+ * Declares/registers an API provider name; provider-specific attributes are derived from this name.
+ *
+ * @name api | module
+ * @kind member
+ * @attribute
+ * @valueType string
+ * @environment client
+ */
+
+/**
+ * Provider-specific operation/action name.
+ *
+ * @name {name}
+ * @kind member
+ * @attribute
+ * @valueType string
+ * @environment client
+ */
+
+/**
+ * Endpoint name or path; may be defined on an ancestor group.
+ *
+ * @name {name}-endpoint
+ * @kind member
+ * @attribute
+ * @valueType string
+ * @environment client
+ */
+
+/**
+ * Provider or HTTP method.
+ *
+ * @name {name}-method
+ * @kind member
+ * @attribute
+ * @valueType string
+ * @environment client
+ */
+
+/**
+ * Maps an element's value into request data or maps response data back to the element. A key ending in [] accumulates values into an array; {} maps the whole object.
+ *
+ * @name {name}-key
+ * @kind member
+ * @attribute
+ * @valueType string
+ * @environment client
+ */
+
+/**
+ * Limits automatic requests to matching event types.
+ *
+ * @name {name}-event
+ * @kind member
+ * @attribute
+ * @valueType string
+ * @environment client
+ */
+
+/**
+ * Excludes an element from request collection or response mapping when set to false.
+ *
+ * @name {name}-request | {name}-response
+ * @kind member
+ * @attribute
+ * @valueType boolean-like string
+ * @acceptedValues false
+ * @environment client
+ */
+
+/**
+ * Declarative selectors recognized by this module.
+ *
+ * @name declarative-selectors
+ * @kind member
+ * @selectors
+ * @environment client
+ * @example
+ * ```json
+ * [
+ *   "[${name}-endpoint]",
+ *   "[${name}=\"${action}\"]:not([${stateAttribute}=\"false\"])",
+ *   "[${name}], [${name}-endpoint]",
+ *   "[template*='${name}']",
+ *   "[template=\"${templateid}\"]",
+ *   "[module], [api]"
+ * ]
+ * ```
+ */
+
+/**
+ * Declarative actions supported or registered by this module.
+ *
+ * @name declarative-actions
+ * @kind member
+ * @actions
+ * @environment client
+ * @example
+ * ```json
+ * [
+ *   {
+ *     "name": "{name}",
+ *     "description": "Actions integration registers each provider as an action; invocation requests the provider operation and processes its response."
+ *   }
+ * ]
+ * ```
+ */
+
+/**
+ * Declarative binding behavior for this module.
+ *
+ * @name declarative-binding
+ * @kind member
+ * @binding
+ * @environment client
+ * @example
+ * ```json
+ * {
+ *   "selectors": [
+ *     "[api]",
+ *     "[module]",
+ *     "[api-endpoint]",
+ *     "[module-endpoint]"
+ *   ],
+ *   "triggers": [
+ *     "onload",
+ *     "input",
+ *     "attribute change",
+ *     "Actions invocation"
+ *   ],
+ *   "initializesExistingElements": true,
+ *   "observesAddedNodes": true
+ * }
+ * ```
+ */
+
+/**
+ * Default export contract for this module.
+ *
+ * @name api-default-export
+ * @kind member
+ * @default-export
+ * @environment client
+ * @example
+ * ```json
+ * "CoCreateApi"
+ * ```
+ */
