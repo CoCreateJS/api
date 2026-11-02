@@ -344,9 +344,9 @@ Inbound webhooks configured with authentication rules are validated using `crypt
 
 ## How to Contribute
 
-We encourage contributions to all CoCreate libraries. Please see our **[CONTRIBUTING.md](https://github.com/CoCreateJS/CoCreate-api/blob/master/CONTRIBUTING.md)** guide for development workflows and contribution guidelines.
+We encourage contributions to all CoCreate libraries. Please see our **[CONTRIBUTING.md](https://github.com/CoCreateJS/api/blob/master/CONTRIBUTING.md)** guide for development workflows and contribution guidelines.
 
-If you discover a bug or would like to request a feature, please open an issue on our **[GitHub Issues](https://github.com/CoCreateJS/CoCreate-api/issues)** tracker.
+If you discover a bug or would like to request a feature, please open an issue on our **[GitHub Issues](https://github.com/CoCreateJS/api/issues)** tracker.
 
 For complete API documentation, integration examples, and webhook guides, visit:
 

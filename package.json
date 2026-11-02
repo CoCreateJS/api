@@ -27,17 +27,17 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cocreatejs/CoCreate-api.git"
+    "url": "git+https://github.com/CoCreateJS/api.git"
   },
   "author": "CoCreate LLC",
   "license": "GPL-3.0",
   "bugs": {
-    "url": "https://github.com/CoCreateJS/CoCreate-api/issues"
+    "url": "https://github.com/CoCreateJS/api/issues"
   },
   "homepage": "https://CoCreateJS.com/docs/api",
   "funding": {
     "type": "GitHub Sponsors ❤",
-    "url": "https://github.com/sponsors/CoCreate-app"
+    "url": "https://github.com/sponsors/CoCreateJS"
   },
   "type": "module",
   "main": "./src/server.js",
