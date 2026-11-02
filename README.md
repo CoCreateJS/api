@@ -19,7 +19,7 @@ For complete API references, integration guides, webhook configuration, and usag
 - [Client Usage: HTML5 Attributes](#client-usage-html5-attributes)
 - [Client Usage: JavaScript API](#client-usage-javascript-api)
 - [Attribute Reference](#attribute-reference)
-- [Server Usage](#server-usage)
+- [Server Usage](#usage)
 - [How it Works](#how-it-works)
 - [Architecture and Payload Specs](#architecture-and-payload-specs)
 - [Security Implementations](#security-implementations)
@@ -227,7 +227,7 @@ Bind the API framework directly during the bootstrapping phase of your core `CoC
 
 ```javascript
 import apiGateway from '@cocreate/api';
-import { CoCreateServer } from '@cocreate/server';
+import { CoCreateServer } from '@cocreate/cluster';
 
 // Boot the primary application server instance
 const serverContext = await CoCreateServer.start();
