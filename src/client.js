@@ -402,8 +402,7 @@ export default CoCreateApi;
  * Declares/registers an API provider name; provider-specific attributes are derived from this name.
  *
  * @name api | module
- * @kind member
- * @attribute
+ * @kind attribute
  * @valueType string
  * @environment client
  */
@@ -412,8 +411,7 @@ export default CoCreateApi;
  * Provider-specific operation/action name.
  *
  * @name {name}
- * @kind member
- * @attribute
+ * @kind attribute
  * @valueType string
  * @environment client
  */
@@ -422,8 +420,7 @@ export default CoCreateApi;
  * Endpoint name or path; may be defined on an ancestor group.
  *
  * @name {name}-endpoint
- * @kind member
- * @attribute
+ * @kind attribute
  * @valueType string
  * @environment client
  */
@@ -432,8 +429,7 @@ export default CoCreateApi;
  * Provider or HTTP method.
  *
  * @name {name}-method
- * @kind member
- * @attribute
+ * @kind attribute
  * @valueType string
  * @environment client
  */
@@ -442,8 +438,7 @@ export default CoCreateApi;
  * Maps an element's value into request data or maps response data back to the element. A key ending in [] accumulates values into an array; {} maps the whole object.
  *
  * @name {name}-key
- * @kind member
- * @attribute
+ * @kind attribute
  * @valueType string
  * @environment client
  */
@@ -452,8 +447,7 @@ export default CoCreateApi;
  * Limits automatic requests to matching event types.
  *
  * @name {name}-event
- * @kind member
- * @attribute
+ * @kind attribute
  * @valueType string
  * @environment client
  */
@@ -462,8 +456,7 @@ export default CoCreateApi;
  * Excludes an element from request collection or response mapping when set to false.
  *
  * @name {name}-request | {name}-response
- * @kind member
- * @attribute
+ * @kind attribute
  * @valueType boolean-like string
  * @acceptedValues false
  * @environment client
