@@ -1,3 +1,43 @@
+# [2.0.0](https://github.com/CoCreateJS/api/compare/v1.23.2...v2.0.0) (2026-11-02)
+
+
+### Bug Fixes
+
+* add Deno specific entries to .gitignore ([2d1ed77](https://github.com/CoCreateJS/api/commit/2d1ed7725170fbd973a1360789c80c35f9b636b5))
+* api.webhook ([58d63f5](https://github.com/CoCreateJS/api/commit/58d63f5ef399082da9861a82eda3a1c0d1733c9c))
+* bump [@cocreate](https://github.com/cocreate) dependencies ([280d456](https://github.com/CoCreateJS/api/commit/280d456d367189b029c85b38352d6b47aa04c50f))
+* bump [@cocreate](https://github.com/cocreate) package versions ([5ea80ef](https://github.com/CoCreateJS/api/commit/5ea80ef2170be467364aefd0b69c7aa591f0d351))
+* bump versions ([e8b6e34](https://github.com/CoCreateJS/api/commit/e8b6e34db6efe274e0f0f3d2afd987d9487696cc))
+* bump versions ([3de2e66](https://github.com/CoCreateJS/api/commit/3de2e6620c98246a419fb8854b17dae886a5ef89))
+* bumped dependencies ([01ab4a9](https://github.com/CoCreateJS/api/commit/01ab4a98fbab44dd30c02da462b3fc65f2bfb051))
+* expose XML provider error details ([7fc2e9c](https://github.com/CoCreateJS/api/commit/7fc2e9c51f48044da9d5151439e08f7911b8e25d))
+* preserve API runtime bindings in AST sandbox ([64831fe](https://github.com/CoCreateJS/api/commit/64831fe1fd481e28675dc9a7fd657bdb7871ff86))
+* preserve dynamic API URLs ([e658f1b](https://github.com/CoCreateJS/api/commit/e658f1b66016db7b66640343a2a33ac47b1d1fe6))
+* propagate API failures through action chains ([fb4d79b](https://github.com/CoCreateJS/api/commit/fb4d79b308d4cfc52de0f90cea7c8a14bc6ad02d))
+* remove trailing slash from node_modules entry in .gitignore ([5d2af8e](https://github.com/CoCreateJS/api/commit/5d2af8e70b3ae837ca6e327dce62f10d3aa082e8))
+* remove unused dependency and refactor sandbox execution context ([419ec8e](https://github.com/CoCreateJS/api/commit/419ec8e44841daf51ac660a5574f345854c4d9d7))
+* remove unused import of Config from @cocreate/config ([bc9ff1e](https://github.com/CoCreateJS/api/commit/bc9ff1e6879421a8b8cab4af13f43555739006ff))
+* replace legacy $filter field with filter ([33a800e](https://github.com/CoCreateJS/api/commit/33a800e97d80f8925589b7b9727a3f90838dc5ed))
+* update copyright year and remove deprecated JWT functions ([e57e40f](https://github.com/CoCreateJS/api/commit/e57e40f56f45b25262d4b4cc0e6ed88960507326))
+* update git url ([4d45cb6](https://github.com/CoCreateJS/api/commit/4d45cb617ba7c8177eaebd91464fbcd4ca9646b7))
+* update GitHub Actions to use latest versions and sync package.json description ([7396258](https://github.com/CoCreateJS/api/commit/73962589470133cfa212a241830b996ed5cb3170))
+
+
+### Features
+
+* add response and header to createSandbox context ([95bebe3](https://github.com/CoCreateJS/api/commit/95bebe3890a09a13cdaf76d6320efdfd55d98736))
+* align API execution with AST endpoints ([d2bc14c](https://github.com/CoCreateJS/api/commit/d2bc14c52a7ee00bad966824f4787902b1ed1ff6))
+* align CoCreate repository and package naming ([e8a4c95](https://github.com/CoCreateJS/api/commit/e8a4c95f4ac038c25546fffb22c5d9185f3cafbd))
+* bump all dependencies ([e360940](https://github.com/CoCreateJS/api/commit/e360940190d0523971506b099a5405663da0fd4c))
+* bumped all dependency versions ([3ac51e5](https://github.com/CoCreateJS/api/commit/3ac51e5eccf8fb7882ecd9d4b0ae65edfa63457e))
+* expose provider variables to endpoint expressions ([702194a](https://github.com/CoCreateJS/api/commit/702194a8906562867daaf7db3a54bf75c29bd43b))
+* refactor JWT handling and re-export security functions from utils ([35cf2b6](https://github.com/CoCreateJS/api/commit/35cf2b64bfee07bb14ebd5fb3e5f4dc1412cb76e))
+
+
+### BREAKING CHANGES
+
+* consumers must use the renamed CoCreate package and repository identities; the previous prefixed names are no longer supported.
+
 ## [1.23.2](https://github.com/CoCreateJS/CoCreate-api/compare/v1.23.1...v1.23.2) (2026-07-19)
 
 
