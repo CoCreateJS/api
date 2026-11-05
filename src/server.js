@@ -372,11 +372,12 @@ export async function send(data, parentContext = null) {
  * @param {object} req - Native HTTP request.
  * @param {object} res - Native HTTP response.
  * @param {object} [parsedInput] - Body already read by the manager HTTP entrance.
+ * @param {Function} [execute] - Trusted dispatcher invoked only after request authorization.
  * @returns {Promise<object|undefined>} Successful execution result, otherwise undefined.
  * @public
  * @environment server
  */
-export async function http(req, res, parsedInput) {
+export async function http(req, res, parsedInput, execute = request => server.api.send(request)) {
     const reply = (status, body) => {
         res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify(body));
@@ -427,7 +428,7 @@ export async function http(req, res, parsedInput) {
         Object.assign(envelope, { organization_id: organization._id, host, apikey });
         const request = await server.authorize?.request(envelope);
         if (!request) return reply(403, { error: 'Operation is not authorized.' });
-        const result = await server.api.send(request);
+        const result = await execute(request);
         const failed = result?.success === false || hasHttpErrors(result?.error);
         reply(failed ? 400 : 200, result);
         return failed ? undefined : result;
