@@ -1,3 +1,16 @@
+# [2.1.0](https://github.com/CoCreateJS/api/compare/v2.0.0...v2.1.0) (2026-11-05)
+
+
+### Bug Fixes
+
+* support authorized manager operation dispatch ([a899876](https://github.com/CoCreateJS/api/commit/a8998763dfd213d4ba64663a3ce294dd117729b8))
+* upgrade CoCreate dependencies to v2 ([4a3a3af](https://github.com/CoCreateJS/api/commit/4a3a3afe4675c977625c9567472dc5fc26820637))
+
+
+### Features
+
+* add authorized API HTTP request handling ([42894e6](https://github.com/CoCreateJS/api/commit/42894e69525388e6e021758f3d7ffb4f1e4ad687))
+
 # [2.0.0](https://github.com/CoCreateJS/api/compare/v1.23.2...v2.0.0) (2026-11-02)
 
 
