@@ -360,3 +360,8 @@ This software is dual-licensed under the GNU Affero General Public License versi
 
 - **Open Source Use:** For open-source projects and non-commercial use, this software is available under the AGPLv3. For the full license text, see the LICENSE file.
 - **Commercial Use:** Commercial users must obtain a commercial license. Commercial licenses are available when signing up for an API key through the CoCreate platform.
+## HTTP entrance
+
+The initialized API service exposes `http(req, res)` alongside `webhook(req, res)`. The module accepts POST JSON bodies up to 1 MiB, resolves organization scope from the hostname, and authorizes through `server.authorize.request` before execution. Bearer API keys and the envelope `apikey` field are supported; conflicting keys are rejected. Missing permission or authorization service returns 403. Caller scope and socket/user identity are excluded, and execution uses the sanitized envelope without the transport key.
+
+`send()` remains the execution API used by trusted internal calls and socket dispatch, where socket authorization already occurs. The existing webhook AST owns provider signature verification.

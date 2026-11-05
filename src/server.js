@@ -33,6 +33,7 @@ let crud = null;
 
 const API = {
     send,
+    http,
     webhook,
     getApiConfig
 };
@@ -364,6 +365,84 @@ export async function send(data, parentContext = null) {
         }
         throw error;
     }
+}
+
+/**
+ * Handles inbound API HTTP requests, resolves host scope and authorizes before execution.
+ * @param {object} req - Native HTTP request.
+ * @param {object} res - Native HTTP response.
+ * @param {object} [parsedInput] - Body already read by the manager HTTP entrance.
+ * @returns {Promise<object|undefined>} Successful execution result, otherwise undefined.
+ * @public
+ * @environment server
+ */
+export async function http(req, res, parsedInput) {
+    const reply = (status, body) => {
+        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(body));
+    };
+    if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST');
+        return reply(405, { error: 'Use POST for this operation.' });
+    }
+    if (req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+        return reply(415, { error: 'An application/json body is required.' });
+    }
+    let input = parsedInput;
+    try {
+        if (input === undefined) {
+            const chunks = [];
+            let size = 0;
+            for await (const chunk of req) {
+                const buffer = Buffer.from(chunk);
+                size += buffer.length;
+                if (size > 1024 * 1024) return reply(413, { error: 'Request body exceeds 1 MiB.' });
+                chunks.push(buffer);
+            }
+            input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        }
+        if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error();
+    } catch {
+        return reply(400, { error: 'A JSON object is required.' });
+    }
+
+    const bearer = req.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
+    const apikey = bearer || input.apikey;
+    if ((apikey !== undefined && (typeof apikey !== 'string' || !apikey.trim())) ||
+        (bearer && input.apikey !== undefined && input.apikey !== bearer)) {
+        return reply(401, { error: 'A valid API key is required.' });
+    }
+
+    try {
+        const host = new URL(`https://${req.headers.host}`).hostname;
+        const organization = await server.crud.getOrganization({ host });
+        if (!organization?._id || organization.error) return reply(404, { error: 'Organization not found.' });
+        if (typeof input.api !== 'string' || !input.api.trim() ||
+            typeof input.endpoint !== 'string' || !input.endpoint.trim() ||
+            typeof input.method !== 'string' || !input.method.trim()) {
+            return reply(400, { error: 'api, endpoint and method are required.' });
+        }
+        const envelope = pickHttpFields(input, ['api', 'endpoint', 'method', 'data', 'region', 'headers', 'searchParams', 'timeout']);
+        // Scope and identity are server-resolved, never supplied by the caller.
+        Object.assign(envelope, { organization_id: organization._id, host, apikey });
+        const request = await server.authorize?.request(envelope);
+        if (!request) return reply(403, { error: 'Operation is not authorized.' });
+        const result = await server.api.send(request);
+        const failed = result?.success === false || hasHttpErrors(result?.error);
+        reply(failed ? 400 : 200, result);
+        return failed ? undefined : result;
+    } catch (error) {
+        if (error.code === 'AUTHORIZATION_DENIED') return reply(403, { error: error.message });
+        return reply(500, { error: 'Unable to process the operation.' });
+    }
+}
+
+function hasHttpErrors(error) {
+    return Array.isArray(error) ? error.length > 0 : Boolean(error);
+}
+
+function pickHttpFields(input, fields) {
+    return Object.fromEntries(fields.filter(field => Object.hasOwn(input, field)).map(field => [field, input[field]]));
 }
 
 /**
