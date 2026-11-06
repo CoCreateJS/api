@@ -1,7 +1,7 @@
 /*globals CustomEvent, config*/
 import { getValueFromObject, dotNotationToObject } from "@cocreate/utils";
 import Observer from "@cocreate/observer";
-import Socket from "@cocreate/socket-client";
+import { SocketClient as Socket } from "@cocreate/socket";
 import Actions from "@cocreate/actions";
 import { render } from "@cocreate/render";
 import "@cocreate/element-prototype";
