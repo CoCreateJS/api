@@ -107,7 +107,7 @@ function createTenantProxy(target, orgId, host) {
 function createSandbox(context) {
     const isPlatformOrg = server?.organization_id && (context.organization_id === server.organization_id);
     const secureCrud = createTenantProxy(context.crud, context.organization_id, context.host);
-    const secureWs = createTenantProxy(context.wsManager, context.organization_id, context.host);
+    const secureWs = createTenantProxy(server?.send ? { send: payload => server.send(payload) } : undefined, context.organization_id, context.host);
 
     const sandbox = {
         // Provider fields are configuration variables. For example, a
@@ -298,8 +298,8 @@ export async function send(data, parentContext = null) {
 
         if (request.resolved) {
             data.data = request.data
-            if (data.socket && wsManager) {
-                wsManager.send(data);
+            if (data.socket && server?.send) {
+                server.send(data);
             }
             return data;
         }
@@ -343,8 +343,8 @@ export async function send(data, parentContext = null) {
         const response = await makeHttpRequest(url, options);
         data.data = await parseResponseData(response);
 
-        if (data.socket && wsManager) {
-            wsManager.send(data);
+        if (data.socket && server?.send) {
+            server.send(data);
         }
         return data;
     } catch (error) {
@@ -359,8 +359,8 @@ export async function send(data, parentContext = null) {
             data.statusText = error.response.statusText;
             data.responseData = error.response.data;
         }
-        if (data.socket && wsManager) {
-            wsManager.send(data);
+        if (data.socket && server?.send) {
+            server.send(data);
             return data;
         }
         throw error;
