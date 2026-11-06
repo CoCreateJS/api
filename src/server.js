@@ -31,6 +31,12 @@ import {
 let server = null;
 let crud = null;
 
+function sendToServer(data) {
+    const envelope = { ...data };
+    delete envelope.socket;
+    return server.send(envelope);
+}
+
 const API = {
     send,
     http,
@@ -107,7 +113,7 @@ function createTenantProxy(target, orgId, host) {
 function createSandbox(context) {
     const isPlatformOrg = server?.organization_id && (context.organization_id === server.organization_id);
     const secureCrud = createTenantProxy(context.crud, context.organization_id, context.host);
-    const secureWs = createTenantProxy(server?.send ? { send: payload => server.send(payload) } : undefined, context.organization_id, context.host);
+    const secureWs = createTenantProxy({ send: payload => server.send(payload) }, context.organization_id, context.host);
 
     const sandbox = {
         // Provider fields are configuration variables. For example, a
@@ -184,7 +190,6 @@ function createSandbox(context) {
  * @param {Object} [data.searchParams] - Query parameters appended to the request URL.
  * @param {Object} [data.headers] - Custom HTTP header directives.
  * @param {number} [data.timeout=15000] - Request timeout in milliseconds.
- * @param {Object} [data.socket] - WebSocket client reference for real-time response emit.
  * @param {string} [data.organization_id] - Multi-tenant organization identifier.
  * @param {string} [data.host] - Target host domain.
  * @param {Object|null} [parentContext=null] - Outer sandbox execution context when nested.
@@ -196,8 +201,8 @@ function createSandbox(context) {
 export async function send(data, parentContext = null) {
     try {
         const wsManager = server?.wsManager;
-        const orgId = parentContext?.organization_id || data.socket?.organization_id || data.organization_id;
-        const host = parentContext?.host || data.socket?.host || data.host;
+        const orgId = parentContext?.organization_id || data.organization_id;
+        const host = parentContext?.host || data.host;
 
         const apiName = data.api?.trim() || "";
         const endpoint = data.endpoint?.trim() || "";
@@ -298,9 +303,7 @@ export async function send(data, parentContext = null) {
 
         if (request.resolved) {
             data.data = request.data
-            if (data.socket && server?.send) {
-                server.send(data);
-            }
+            sendToServer(data);
             return data;
         }
 
@@ -343,9 +346,7 @@ export async function send(data, parentContext = null) {
         const response = await makeHttpRequest(url, options);
         data.data = await parseResponseData(response);
 
-        if (data.socket && server?.send) {
-            server.send(data);
-        }
+        sendToServer(data);
         return data;
     } catch (error) {
         const wsManager = server?.wsManager;
@@ -359,11 +360,8 @@ export async function send(data, parentContext = null) {
             data.statusText = error.response.statusText;
             data.responseData = error.response.data;
         }
-        if (data.socket && server?.send) {
-            server.send(data);
-            return data;
-        }
-        throw error;
+        sendToServer(data);
+        return data;
     }
 }
 
