@@ -1,3 +1,13 @@
+## [2.1.1](https://github.com/CoCreateJS/api/compare/v2.1.0...v2.1.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* complete unified socket package migration ([3dc2f13](https://github.com/CoCreateJS/api/commit/3dc2f136b9745b4f1b95b65bc477a611ec91c8e0))
+* preserve socket data in API responses ([0668a04](https://github.com/CoCreateJS/api/commit/0668a0477ef1332b2debb374ca175b471dc94503))
+* route API replies through server send ([a092f17](https://github.com/CoCreateJS/api/commit/a092f17cb3cd39a2c9bb05a07175d375b7aae162))
+* route component responses through unified server send ([7bc2168](https://github.com/CoCreateJS/api/commit/7bc2168d79a36eced19bc5d2447e11bab37113a4))
+
 # [2.1.0](https://github.com/CoCreateJS/api/compare/v2.0.0...v2.1.0) (2026-11-05)
 
 
