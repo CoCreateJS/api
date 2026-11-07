@@ -33,7 +33,6 @@ let crud = null;
 
 function sendToServer(data) {
     const envelope = { ...data };
-    delete envelope.socket;
     return server.send(envelope);
 }
 

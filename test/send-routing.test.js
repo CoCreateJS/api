@@ -14,7 +14,7 @@ test('API responses and errors enter server.send instead of raw socket delivery'
     assert.equal(await send(data), data);
     assert.deepEqual(data.data, { ok: true });
     assert.notEqual(sent[0], data);
-    assert.equal(sent[0].socket, undefined);
+    assert.equal(sent[0].socket, data.socket);
     assert.equal(sent[0].socketId, 'trusted-socket');
     assert.equal(sent[0].clientId, 'trusted-client');
     const missing = { organization_id: 'tenant', host: 'tenant.test' };
@@ -41,7 +41,7 @@ test('API AST socket operators retain tenant scope while entering server.send', 
     assert.equal(sent[0].organization_id, 'tenant');
     assert.equal(sent[0].host, 'tenant.test');
     assert.equal(sent[0].socket, undefined);
-    assert.equal(sent[1].socket, undefined);
+    assert.equal(sent[1].socket, data.socket);
     assert.equal(sent[1].socketId, 'trusted-socket');
     assert.equal(sent.length, 2);
 });
