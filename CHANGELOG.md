@@ -1,3 +1,11 @@
+## [2.1.2](https://github.com/CoCreateJS/api/compare/v2.1.1...v2.1.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* bump CoCreate dependency versions ([b17916d](https://github.com/CoCreateJS/api/commit/b17916d4ca86702dc6359f1a241e5be6c2ef00d2))
+* consolidate CRUD client and server packages ([87bee2c](https://github.com/CoCreateJS/api/commit/87bee2cd56a55c29cf01c8be36941651b8a1dcb8))
+
 ## [2.1.1](https://github.com/CoCreateJS/api/compare/v2.1.0...v2.1.1) (2026-11-07)
 
 
