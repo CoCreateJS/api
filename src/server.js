@@ -38,7 +38,6 @@ function sendToServer(data) {
 
 const API = {
     send,
-    http,
     webhook,
     getApiConfig
 };
@@ -63,7 +62,7 @@ export async function init(Server) {
 /**
  * Creates a Proxy firewall wrapper to automatically inject multi-tenant scope parameters (`organization_id` and `host`) into target method invocations.
  *
- * @param {Object} target - Target service instance to proxy (e.g., crud or wsManager).
+ * @param {Object} target - Target service instance to proxy.
  * @param {string} orgId - Multi-tenant organization identifier.
  * @param {string} host - Host domain identifier.
  * @returns {Proxy|undefined} Proxied target service with auto-injected tenant parameters, or undefined if target is falsy.
@@ -100,7 +99,7 @@ function createTenantProxy(target, orgId, host) {
  * @param {Object} [context.request] - Incoming HTTP request object.
  * @param {Object} [context.response] - Outgoing HTTP response object.
  * @param {Object} [context.crud] - Database service interface instance.
- * @param {Object} [context.wsManager] - WebSocket manager instance.
+ * @param {Object} [context.socket] - Socket service proxy.
  * @param {string} [context.key] - Provider key/credential string.
  * @param {Object} [context.config] - Full provider API configuration object.
  * @param {string} context.organization_id - Target multi-tenant organization ID.
@@ -112,7 +111,7 @@ function createTenantProxy(target, orgId, host) {
 function createSandbox(context) {
     const isPlatformOrg = server?.organization_id && (context.organization_id === server.organization_id);
     const secureCrud = createTenantProxy(context.crud, context.organization_id, context.host);
-    const secureWs = createTenantProxy({ send: payload => server.send(payload) }, context.organization_id, context.host);
+    const secureSocket = createTenantProxy({ send: payload => server.send(payload) }, context.organization_id, context.host);
 
     const sandbox = {
         // Provider fields are configuration variables. For example, a
@@ -131,8 +130,7 @@ function createSandbox(context) {
         Buffer,
 
         crud: secureCrud,
-        socket: secureWs,
-        wsManager: secureWs,
+        socket: secureSocket,
         security,
 
         key: context.key,
@@ -163,7 +161,6 @@ function createSandbox(context) {
         $header: sandbox.header,
         $crud: sandbox.crud,
         $socket: sandbox.socket,
-        $wsManager: sandbox.wsManager,
         $security: sandbox.security,
         $config: sandbox.config,
         $api: sandbox.api
@@ -199,7 +196,7 @@ function createSandbox(context) {
  */
 export async function send(data, parentContext = null) {
     try {
-        const wsManager = server?.wsManager;
+        const socket = server?.socket;
         const orgId = parentContext?.organization_id || data.organization_id;
         const host = parentContext?.host || data.host;
 
@@ -252,7 +249,7 @@ export async function send(data, parentContext = null) {
             organization_id: orgId,
             host,
             crud: parentContext?.crud || crud,
-            wsManager: parentContext?.wsManager || wsManager,
+            socket: parentContext?.socket || socket,
             key: apiConfig.key,
             config: apiConfig
         };
@@ -348,7 +345,6 @@ export async function send(data, parentContext = null) {
         sendToServer(data);
         return data;
     } catch (error) {
-        const wsManager = server?.wsManager;
         if (!Array.isArray(data.error)) {
             data.error = data.error ? [data.error] : [];
         }
@@ -365,85 +361,6 @@ export async function send(data, parentContext = null) {
 }
 
 /**
- * Handles inbound API HTTP requests, resolves host scope and authorizes before execution.
- * @param {object} req - Native HTTP request.
- * @param {object} res - Native HTTP response.
- * @param {object} [parsedInput] - Body already read by the manager HTTP entrance.
- * @param {Function} [execute] - Trusted dispatcher invoked only after request authorization.
- * @returns {Promise<object|undefined>} Successful execution result, otherwise undefined.
- * @public
- * @environment server
- */
-export async function http(req, res, parsedInput, execute = request => server.api.send(request)) {
-    const reply = (status, body) => {
-        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-        res.end(JSON.stringify(body));
-    };
-    if (req.method !== 'POST') {
-        res.setHeader('Allow', 'POST');
-        return reply(405, { error: 'Use POST for this operation.' });
-    }
-    if (req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
-        return reply(415, { error: 'An application/json body is required.' });
-    }
-    let input = parsedInput;
-    try {
-        if (input === undefined) {
-            const chunks = [];
-            let size = 0;
-            for await (const chunk of req) {
-                const buffer = Buffer.from(chunk);
-                size += buffer.length;
-                if (size > 1024 * 1024) return reply(413, { error: 'Request body exceeds 1 MiB.' });
-                chunks.push(buffer);
-            }
-            input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        }
-        if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error();
-    } catch {
-        return reply(400, { error: 'A JSON object is required.' });
-    }
-
-    const bearer = req.headers.authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
-    const apikey = bearer || input.apikey;
-    if ((apikey !== undefined && (typeof apikey !== 'string' || !apikey.trim())) ||
-        (bearer && input.apikey !== undefined && input.apikey !== bearer)) {
-        return reply(401, { error: 'A valid API key is required.' });
-    }
-
-    try {
-        const host = new URL(`https://${req.headers.host}`).hostname;
-        const organization = await server.crud.getOrganization({ host });
-        if (!organization?._id || organization.error) return reply(404, { error: 'Organization not found.' });
-        if (typeof input.api !== 'string' || !input.api.trim() ||
-            typeof input.endpoint !== 'string' || !input.endpoint.trim() ||
-            typeof input.method !== 'string' || !input.method.trim()) {
-            return reply(400, { error: 'api, endpoint and method are required.' });
-        }
-        const envelope = pickHttpFields(input, ['api', 'endpoint', 'method', 'data', 'region', 'headers', 'searchParams', 'timeout']);
-        // Scope and identity are server-resolved, never supplied by the caller.
-        Object.assign(envelope, { organization_id: organization._id, host, apikey });
-        const request = await server.authorize?.request(envelope);
-        if (!request) return reply(403, { error: 'Operation is not authorized.' });
-        const result = await execute(request);
-        const failed = result?.success === false || hasHttpErrors(result?.error);
-        reply(failed ? 400 : 200, result);
-        return failed ? undefined : result;
-    } catch (error) {
-        if (error.code === 'AUTHORIZATION_DENIED') return reply(403, { error: error.message });
-        return reply(500, { error: 'Unable to process the operation.' });
-    }
-}
-
-function hasHttpErrors(error) {
-    return Array.isArray(error) ? error.length > 0 : Boolean(error);
-}
-
-function pickHttpFields(input, fields) {
-    return Object.fromEntries(fields.filter(field => Object.hasOwn(input, field)).map(field => [field, input[field]]));
-}
-
-/**
  * Processes incoming HTTP webhook requests, verifies HMAC/JWT security signatures, and executes pipelines.
  *
  * @async
@@ -455,7 +372,7 @@ function pickHttpFields(input, fields) {
  */
 export async function webhook(req, res) {
     try {
-        const wsManager = server?.wsManager;
+        const socket = server?.socket;
         const urlObject = new URL(`http://${req.headers.host}${req.url}`);
         const hostname = urlObject.hostname;
 
@@ -511,7 +428,7 @@ export async function webhook(req, res) {
             organization,
             organization_id: organization._id,
             crud,
-            wsManager,
+            socket,
             key: apiConfig.key,
             config: apiConfig
         };

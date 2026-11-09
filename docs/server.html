@@ -104,14 +104,14 @@
 				<pre><code class="language-javascript">
 	var utils= require('../utils');
 	class CoCreateStripe {
-		constructor(wsManager) {
+		constructor(socket) {
 			this.module_id="stripe";
 			....
 		}
 		init() {
-			if (this.wsManager) {
+			if (this.socket) {
 				//. endpoint = module_name (ex: stripe)
-				this.wsManager.on(this.module_id, (socket, data) =&gt this.sendStripe(socket, data));
+				this.socket.on(this.module_id, (socket, data) =&gt this.sendStripe(socket, data));
 			}
 		}
 		async sendStripe(socket, data) {
@@ -125,7 +125,7 @@
 		
 		CreateCustomer(socket, type, param1) {
 	    	... Get result by processing
-	        utils.send_response(this.wsManager, socket, {"type":type,"response":result}, this.module_id)
+	        utils.send_response(this.socket, socket, {"type":type,"response":result}, this.module_id)
 		}
 	}//end Class 
 	module.exports = CoCreateStripe;
@@ -145,7 +145,7 @@
 				<h4>(2). Endpoint and moudle_id is same</h4>
 				<h4>(3). Send response</h4>
 				<pre><code class="language-javascript">
-	utils.send_response(that.wsManager, socket, {"type":action_name,"response":result}, moudle_id)
+	utils.send_response(that.socket, socket, {"type":action_name,"response":result}, moudle_id)
 	</code></pre>
 				<h4>(4). Request data structure </h4>
 				<pre><code class="language-javascript">{

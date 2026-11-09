@@ -6,7 +6,7 @@ test('API responses and errors enter server.send instead of raw socket delivery'
     const sent = [];
     await init({ organization_id: 'platform', crud: {},
         send: data => { sent.push(data); return data; },
-        wsManager: { send() { assert.fail('API must use server.send'); } } });
+        socket: { send() { assert.fail('API must use server.send'); } } });
     t.mock.method(globalThis, 'fetch', async () => new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } }));
     const data = { method: 'get', url: 'https://example.test', organization_id: 'tenant',
         socketId: 'trusted-socket', clientId: 'trusted-client', host: 'tenant.test',
@@ -31,7 +31,7 @@ test('API AST socket operators retain tenant scope while entering server.send', 
             ? [{ _id: 'provider', url: 'https://example.test' }]
             : [{ resolved: true, data: { '$socket.send': { method: 'notification', organization_id: 'forged', host: 'forged' } } }] }) },
         send: data => { sent.push({ ...data }); return data; },
-        wsManager: { send() { assert.fail('AST must use server.send'); } } });
+        socket: { send() { assert.fail('AST must use server.send'); } } });
     const data = { method: 'post', api: 'provider', endpoint: 'notify', organization_id: 'tenant',
         socketId: 'trusted-socket', clientId: 'trusted-client', host: 'tenant.test',
         socket: { organization_id: 'forged-org', host: 'forged.test' } };

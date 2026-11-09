@@ -33,7 +33,7 @@ For complete API references, integration guides, webhook configuration, and usag
 * **Abstract Syntax Tree (AST) Micro-Operators:** Evaluates functional configuration contexts inline, supporting expressive syntax tags (like `$data`, `$event`, `$actions`, and `$request`) along with custom business logic operators.
 * **Declarative Client Interface:** Configures complete request and response cycles using HTML5 attributes, assembling payloads from form fields and mapping results back into the document without provider-specific code.
 * **Tenant Environmental Isolation Firewall:** Guarantees cryptographic data partitioning by intercepting execution matrices and forcefully injecting bound `organization_id` and verified `host` values into core operations.
-* **Real-Time WebSocket Integration Matrix:** Seamlessly hooks into live server networks (`wsManager`), listening for incoming `api` and `endpoint` actions and streaming real-time operational state payloads directly back to the client.
+* **Real-Time WebSocket Integration Matrix:** Seamlessly hooks into live server networks (`socket`), listening for incoming `api` and `endpoint` actions and streaming real-time operational state payloads directly back to the client.
 * **Dual Outbound Execution Vectors:** Wire-speeds native, pre-constructed HTTP payloads instantly, or dynamically builds custom multi-step outbound integrations by resolving runtime metadata against persistence layers.
 * **Cryptographic Signatures & JWT Orchestration:** Features native, low-latency hooks to generate JSON Web Tokens (`$jwt`) using HMAC-SHA256, alongside timing-attack-safe webhook signature verification (`verifySignature`).
 * **Sealed AST Runtime Sandbox:** Features a hardened utility matrix containing sandboxed global objects (`JSON`, `Array`, `Math`) and helper methods (like Base64 encoding/decoding and URL encoders), safely wrapping calculations outside the global scope.
@@ -290,7 +290,7 @@ const result = await apiGateway.executeApi(payload);
 
 ## How it Works
 
-1. **Bootstrap & Event Binding:** During `init()`, the module hooks directly into the server's WebSocket framework (`wsManager`), capturing incoming `api` and `endpoint` event signals to route them to the execution handler.
+1. **Bootstrap & Event Binding:** During `init()`, the module hooks directly into the server's WebSocket framework (`socket`), capturing incoming `api` and `endpoint` event signals to route them to the execution handler.
 2. **Context and Firewall Initialization:** For every outbound execution, the engine evaluates the parameters against a parent context firewall. Security profiles match inbound connections against verified socket bounds, locking `organization_id` and `host` configurations.
 3. **Macro Configuration Resolving:** The engine sends queries through the CRUD synchronization layer to match configuration files against stored endpoints or active integration details inside the database collection.
 4. **AST Matrix Processing:** The router recursively scans headers, parameters, and bodies via `processOperators()`. Found strings matching active variables (such as `$` prefixes) are securely compiled in the isolated `NativeSandbox` environment.
@@ -323,7 +323,7 @@ The API engine creates an execution context for every request.
 | `actions` | `Array` | Results accumulated from previous workflow steps. |
 | `organization_id` | `String` | Tenant identifier. |
 | `host` | `String` | Verified tenant host used for isolation. |
-| `crud` / `wsManager` | `Object` | References to the CRUD layer and WebSocket manager. |
+| `crud` / `socket` | `Object` | References to the CRUD layer and WebSocket manager. |
 
 ---
 
@@ -334,7 +334,7 @@ The API engine creates an execution context for every request.
 
 ### Context Sandboxing
 
-Internal services such as `crud` and `wsManager` intercept execution arguments and automatically enforce the authenticated tenant context. Even if a malicious configuration attempts to override tenant information, the runtime replaces it with the verified execution context.
+Internal services such as `crud` and `socket` intercept execution arguments and automatically enforce the authenticated tenant context. Even if a malicious configuration attempts to override tenant information, the runtime replaces it with the verified execution context.
 
 ### Timing-Safe Signature Verification
 
@@ -362,6 +362,6 @@ This software is dual-licensed under the GNU Affero General Public License versi
 - **Commercial Use:** Commercial users must obtain a commercial license. Commercial licenses are available when signing up for an API key through the CoCreate platform.
 ## HTTP entrance
 
-The initialized API service exposes `http(req, res)` alongside `webhook(req, res)`. The module accepts POST JSON bodies up to 1 MiB, resolves organization scope from the hostname, and authorizes through `server.authorize.request` before execution. Bearer API keys and the envelope `apikey` field are supported; conflicting keys are rejected. Missing permission or authorization service returns 403. Caller scope and socket/user identity are excluded, and execution uses the sanitized envelope without the transport key.
+Inbound API payloads use the central Cluster HTTP transport, which resolves organization scope and authorizes before calling `server.api.send`. The API service retains `webhook(req, res)` for its dedicated inbound webhook contract.
 
 `send()` remains the execution API used by trusted internal calls and socket dispatch, where socket authorization already occurs. The existing webhook AST owns provider signature verification.
