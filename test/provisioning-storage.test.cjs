@@ -79,7 +79,7 @@ async function setup({ index = 0, storage, storageError } = {}) {
         setStorage(value) { currentStorage = value; },
         async run(data = {}) {
             const original = {
-                storage: 'storage-id', region: 'example', vmType: 'small', vmId: 'server-example',
+                storage: 'storage-id', region: 'example', type: 'small', id: 'server-example',
                 cluster_id: 'cluster-id', host: 'example.com', binaryUrl: 'https://example.com/runtime.tar.gz',
                 environment: 'server_id=server-id\ncluster_id=cluster-id',
                 startupScript: startup.default.object[0].config.startupScript,
