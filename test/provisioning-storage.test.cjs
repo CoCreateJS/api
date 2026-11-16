@@ -15,7 +15,7 @@ const dependencies = Promise.all([
     import('../../CoCreate-utils/src/modules/objectToSearchParams.js'),
     import('../../CoCreate-utils/src/modules/searchParamsToObject.js'),
     import('../../../CoCreate-app/src/apps/endpoints/config/data.js'),
-    import('../../../CoCreate-app/src/apps/servers/configs/config/autoscaler.js')
+    import('../../../CoCreate-app/src/apps/configs/config/autoscaler.js')
 ]);
 
 async function setup({ index = 0, storage, storageError } = {}) {
