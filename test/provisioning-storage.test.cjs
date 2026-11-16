@@ -14,8 +14,8 @@ const dependencies = Promise.all([
     import('../../CoCreate-utils/src/modules/ast/index.js'),
     import('../../CoCreate-utils/src/modules/objectToSearchParams.js'),
     import('../../CoCreate-utils/src/modules/searchParamsToObject.js'),
-    import('../../../CoCreate-app/src/apps/endpoints/config/data.js'),
-    import('../../../CoCreate-app/src/apps/configs/config/autoscaler.js')
+    import('../../../app/src/apps/endpoints/config/data.js'),
+    import('../../../app/src/apps/configs/config/autoscaler.js')
 ]);
 
 async function setup({ index = 0, storage, storageError } = {}) {
@@ -184,7 +184,7 @@ test('storage read errors and malformed records stop the endpoint pipeline', asy
 
 
 test('storage lookup requests MongoDB-compatible provider template exclusions', async () => {
-    const template = fs.readFileSync(new URL('../../../CoCreate-app/src/apps/apis/components/fields.html', 'file://' + __filename), 'utf8');
+    const template = fs.readFileSync(new URL('../../../app/src/apps/apis/components/fields.html', 'file://' + __filename), 'utf8');
     const excluded = template.match(/render-exclude="([^"]+)"/)[1].split(',').map(key => key.trim())
         .filter(key => !['name', 'provider', '_id'].includes(key) && !key.startsWith('$'));
     const fixture = await setup({ storage: record });
