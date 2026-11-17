@@ -1,3 +1,10 @@
+## [2.1.3](https://github.com/CoCreateJS/api/compare/v2.1.2...v2.1.3) (2026-11-17)
+
+
+### Bug Fixes
+
+* align API dispatch with shared server routing ([c07b054](https://github.com/CoCreateJS/api/commit/c07b05490e009f0fa395fd06b4166a230ff4c2dc))
+
 ## [2.1.2](https://github.com/CoCreateJS/api/compare/v2.1.1...v2.1.2) (2026-11-07)
 
 
