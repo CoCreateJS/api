@@ -8,10 +8,11 @@ const { URL } = require('node:url');
 const source = fs.readFileSync(require.resolve('../src/server.js'), 'utf8')
     .replace(/^import \{ URL \} from 'node:url';$/m, '')
     .replace(/import \{[\s\S]*?\} from '@cocreate\/utils';/, '')
+    .replace(/^import \{ astAsync \} from '@cocreate\/ast\/server';$/m, '')
     .replace(/export async function/g, 'async function')
     .replace(/export default \{[\s\S]*?\};/, '');
 const dependencies = Promise.all([
-    import('../../CoCreate-utils/src/modules/ast/index.js'),
+    import('../../ast/src/server.js'),
     import('../../CoCreate-utils/src/modules/objectToSearchParams.js'),
     import('../../CoCreate-utils/src/modules/searchParamsToObject.js'),
     import('../../../app/src/apps/endpoints/config/data.js'),

@@ -51,6 +51,7 @@
     }
   },
   "dependencies": {
+    "@cocreate/ast": "^1.0.0",
     "@cocreate/actions": "^2.0.1",
     "@cocreate/crud": "^0.0.0-stage",
     "@cocreate/element-prototype": "^2.0.1",

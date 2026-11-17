@@ -21,10 +21,10 @@
  */
 
 import { URL } from 'node:url';
+import { astAsync } from '@cocreate/ast/server';
 import {
     objectToSearchParams,
     searchParamsToObject,
-    astAsync,
     security
 } from '@cocreate/utils';
 
