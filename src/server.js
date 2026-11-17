@@ -22,10 +22,10 @@
 
 import { URL } from 'node:url';
 import { astAsync } from '@cocreate/ast/server';
+import { kms } from '@cocreate/kms/server';
 import {
     objectToSearchParams,
-    searchParamsToObject,
-    security
+    searchParamsToObject
 } from '@cocreate/utils';
 
 let server = null;
@@ -131,7 +131,7 @@ function createSandbox(context) {
 
         crud: secureCrud,
         socket: secureSocket,
-        security,
+        kms,
 
         key: context.key,
         config: context.config,
@@ -161,7 +161,7 @@ function createSandbox(context) {
         $header: sandbox.header,
         $crud: sandbox.crud,
         $socket: sandbox.socket,
-        $security: sandbox.security,
+        $kms: sandbox.kms,
         $config: sandbox.config,
         $api: sandbox.api
     });

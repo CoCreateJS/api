@@ -30,7 +30,7 @@ async function setup({ index = 0, storage, storageError } = {}) {
     const context = vm.createContext({
         Buffer, URL, AbortController, setTimeout, clearTimeout,
         console: { log() {}, warn() {}, error() {} },
-        objectToSearchParams, searchParamsToObject, astAsync, security: {},
+        objectToSearchParams, searchParamsToObject, astAsync, kms: {},
         fetch: async (url, options) => {
             const body = options.body?.startsWith('{')
                 ? JSON.parse(options.body)

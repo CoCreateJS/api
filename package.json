@@ -57,7 +57,8 @@
     "@cocreate/element-prototype": "^2.0.1",
     "@cocreate/render": "^2.0.1",
     "@cocreate/utils": "^2.0.2",
-    "@cocreate/socket": "^3.0.0"
+    "@cocreate/socket": "^3.0.0",
+    "@cocreate/kms": "^1.1.0"
   },
   "devDependencies": {
     "@cocreate/webpack": "^2.0.1"
